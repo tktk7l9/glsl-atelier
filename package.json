@@ -1,0 +1,27 @@
+{
+  "name": "glsl-atelier",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "手を動かして学ぶインタラクティブ WebGL / Three.js 学習アプリ。GLSL フラグメントシェーダーと Three.js シーン構築を書いて、ライブ描画＋自動採点でクリアする（宇宙天文台 / Shader Lab テーマ）",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "three": "0.184.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.184.0",
+    "@vitest/coverage-v8": "^4.1.6",
+    "esbuild": "^0.28.0",
+    "typescript": "6.0.3",
+    "vite": "8.0.16",
+    "vitest": "^4.1.6"
+  }
+}

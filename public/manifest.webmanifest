@@ -1,0 +1,20 @@
+{
+  "name": "GLSL Atelier — 手を動かして学ぶ WebGL / Three.js",
+  "short_name": "GLSL Atelier",
+  "description": "GLSL フラグメントシェーダーと Three.js を、書いて・光らせて・自動採点でクリアしながら学ぶ。宇宙天文台のような Shader Lab で。",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#05060d",
+  "theme_color": "#05060d",
+  "lang": "ja",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

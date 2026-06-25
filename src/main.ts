@@ -9,6 +9,12 @@ import { lessonById, trackOf } from "./engine/content/index.js";
 import type { ProgressStore } from "./engine/progress.js";
 import type { AppController } from "./app.js";
 
+// Vercel Web Analytics — production only. Script + beacon are same-origin
+// (/_vercel/insights/*), so the strict CSP (script-src/connect-src 'self') is unaffected.
+if (import.meta.env.PROD) {
+  void import("@vercel/analytics").then(({ inject }) => inject());
+}
+
 const store: ProgressStore = {
   getItem: (k) => {
     try {

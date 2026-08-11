@@ -2,7 +2,7 @@
 
 手を動かして学ぶ、インタラクティブな **WebGL / Three.js** 学習サイト。GLSL フラグメントシェーダーと Three.js シーンを **書いて → ライブ描画で確認して → 自動採点でクリア** しながら学べます。雰囲気は「宇宙天文台 / Shader Lab」— 深宇宙の闇に星雲が漂い、bloom で発光します（[css-atelier](https://github.com/tktk7l9/css-atelier) の明るい製図スタジオの真逆）。
 
-▶ **Play**: https://glsl-atelier.vercel.app/
+▶ **Play**: https://glsl-atelier.saitotakuya0719.workers.dev/
 
 ## 特徴
 
@@ -71,3 +71,14 @@ Vanilla TypeScript · Vite 8 · Three.js 0.184 · Vitest 4。フレームワー�
 - メイン全ルート: 厳格 CSP（`unsafe-inline`/`unsafe-eval` なし）＋ HSTS / XFO DENY / nosniff / Referrer-Policy / Permissions-Policy。
 - `/sandbox.html`: ルート限定の緩和 CSP（`connect-src 'none'`）。不透明オリジン iframe 内に閉じ込め。
 - 依存は最小・`npm audit` 0 件を維持。
+
+## ホスティング
+
+本番は **Cloudflare Workers (static assets)**: https://glsl-atelier.saitotakuya0719.workers.dev
+
+2026-08-11、Vercel 無料枠の超過でアカウントが停止（全プロジェクトが
+`402 DEPLOYMENT_DISABLED`）したため移行した。ビルド成果物は純粋な静的
+ファイルなので Worker スクリプトは無く、`wrangler.jsonc` の `assets` だけで
+配信している。セキュリティヘッダーは `public/_headers`（`vercel.json` の
+`headers` を移植したもの）。`npm run deploy` で build + wrangler deploy。
+Vercel 側の設定も残置してあるので、復旧すれば両方に出せる。

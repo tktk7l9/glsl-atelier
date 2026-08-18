@@ -21,10 +21,10 @@
   "devDependencies": {
     "@types/three": "^0.185.4",
     "@vitest/coverage-v8": "^4.1.10",
-    "esbuild": "^0.28.0",
+    "esbuild": "^0.28.2",
     "typescript": "7.0.2",
     "vite": "8.2.1",
     "vitest": "^4.1.6",
-    "wrangler": "^4.120.1"
+    "wrangler": "^4.123.0"
   }
 }

@@ -232,3 +232,51 @@ describe("message override", () => {
     expect(r.message).toBe("");
   });
 });
+
+describe("constructive failure messages (SHIG 55, 11)", () => {
+  const msg = (s: ValidatorSpec, snap: Parameters<typeof runSpec>[1]) => runSpec(s, snap).message;
+
+  it("regionColor names the area and shows target vs current colour", () => {
+    const m = msg(
+      { kind: "regionColor", rect: [0, 0, 1, 1], rgb: [1, 0, 1] },
+      shader({ samples: [px(0.5, 0.5, 0, 0, 0)] }),
+    );
+    expect(m).toContain("画面全体");
+    expect(m).toContain("目標: 赤 1.00・緑 0.00・青 1.00");
+    expect(m).toContain("いま: 赤 0.00・緑 0.00・青 0.00");
+    expect(m).not.toContain("指定領域");
+  });
+
+  it("pixelApprox names the place and shows target vs current colour", () => {
+    const m = msg(
+      { kind: "pixelApprox", x: 0.05, y: 0.5, rgb: [0, 0, 0] },
+      shader({ samples: [px(0.05, 0.5, 1, 1, 1)] }),
+    );
+    expect(m).toContain("左端の中ほど");
+    expect(m).toContain("目標: 赤 0.00・緑 0.00・青 0.00");
+    expect(m).toContain("いま: 赤 1.00・緑 1.00・青 1.00");
+  });
+
+  it("gradient describes the direction in words", () => {
+    const m = msg({ kind: "gradient", axis: "x", dir: "up", channel: "r" }, shader({ samples: [] }));
+    expect(m).toContain("左 → 右 に向かって赤が強くなる");
+    expect(m).not.toMatch(/x 方向/);
+  });
+
+  it("scene colorApprox shows the target colour", () => {
+    const m = msg(
+      { kind: "colorApprox", rgb: [1, 0, 0] },
+      scene({ objects: [obj({ type: "Mesh", color: [0, 0, 1] })] }),
+    );
+    expect(m).toContain("目標: 赤 1.00・緑 0.00・青 0.00");
+  });
+
+  it("cameraPositioned shows target and current position", () => {
+    const m = msg(
+      { kind: "cameraPositioned", position: [0, 0, 8] },
+      scene({ camera: { type: "PerspectiveCamera", position: [0, 0, 5] } }),
+    );
+    expect(m).toContain("目標: (0, 0, 8)");
+    expect(m).toContain("いま: (0, 0, 5)");
+  });
+});

@@ -27,6 +27,7 @@ import type {
   ValidationResult,
   Vec3,
 } from "./snapshot.js";
+import { describeDirection, describePoint, describeRect, formatRgb, formatVec3 } from "./describe.js";
 
 export type Axis = "x" | "y";
 
@@ -101,16 +102,21 @@ function dispatchShader(spec: ShaderSpec, s: ShaderSnapshot): ValidationResult {
     case "pixelApprox": {
       const sample = nearestSample(s.samples, spec.x, spec.y);
       if (!sample) return fail("ピクセルを読み取れませんでした");
-      return colorApprox(rgbOf(sample), spec.rgb, spec.tol ?? COLOR_TOL)
+      const got = rgbOf(sample);
+      return colorApprox(got, spec.rgb, spec.tol ?? COLOR_TOL)
         ? ok
-        : fail(`座標 (${spec.x}, ${spec.y}) の色が想定と違います`);
+        : fail(
+            `${describePoint(spec.x, spec.y)}の色が目標と違います（目標: ${formatRgb(spec.rgb)} / いま: ${formatRgb(got)}）`,
+          );
     }
     case "regionColor": {
       const avg = regionAverage(s.samples, spec.rect);
-      if (!avg) return fail("指定領域にピクセルがありません");
+      if (!avg) return fail(`${describeRect(spec.rect)}の色を読み取れませんでした`);
       return colorApprox(avg, spec.rgb, spec.tol ?? COLOR_TOL)
         ? ok
-        : fail("指定領域の平均色が想定と違います");
+        : fail(
+            `${describeRect(spec.rect)}の色が目標と違います（目標: ${formatRgb(spec.rgb)} / いま: ${formatRgb(avg)}）`,
+          );
     }
     case "notUniform":
       return luminanceVariance(s.samples) >= (spec.minVariance ?? 0.002)
@@ -121,10 +127,11 @@ function dispatchShader(spec: ShaderSpec, s: ShaderSnapshot): ValidationResult {
         ? ok
         : fail(`${spec.axis === "x" ? "左右" : "上下"}が対称になっていません`);
     case "gradient": {
-      const d = halfDelta(s.samples, spec.axis, spec.channel ?? "lum");
+      const ch = spec.channel ?? "lum";
+      const d = halfDelta(s.samples, spec.axis, ch);
       const min = spec.min ?? 0.1;
       const passed = spec.dir === "up" ? d >= min : d <= -min;
-      return passed ? ok : fail(`${spec.axis} 方向のグラデーションになっていません`);
+      return passed ? ok : fail(`${describeDirection(spec.axis, spec.dir, ch)}グラデーションになっていません`);
     }
   }
 }
@@ -161,12 +168,14 @@ function dispatchScene(spec: SceneSpec, s: SceneSnapshot): ValidationResult {
         (o) => o.color !== null && colorApprox(o.color, spec.rgb, spec.tol ?? 0.15),
       )
         ? ok
-        : fail("想定した色のオブジェクトが見つかりません");
+        : fail(`目標の色のオブジェクトが見つかりません（目標: ${formatRgb(spec.rgb)}）`);
     case "cameraPositioned": {
       if (!s.camera) return fail("カメラが見つかりません");
       return dist3(s.camera.position, spec.position) <= (spec.tol ?? 0.5)
         ? ok
-        : fail("カメラの位置が想定と違います");
+        : fail(
+            `カメラの位置が目標と違います（目標: ${formatVec3(spec.position)} / いま: ${formatVec3(s.camera.position)}）`,
+          );
     }
     case "rendersNonEmpty": {
       if (!s.samples) return fail("描画結果が取得できていません");

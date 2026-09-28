@@ -1,13 +1,13 @@
-# Cloudflare Workers static assets のヘッダー定義。vercel.json の headers を
-# 移植したもの(Vercel 側にも同じ内容を残してある)。
+# Header rules for Cloudflare Workers static assets, ported from the headers in
+# vercel.json (the same content is also kept on the Vercel side).
 # https://developers.cloudflare.com/workers/static-assets/headers/
 #
-# ⚠️ vercel.json は負の先読み `/((?!sandbox\.html).*)` で除外していたが、
-# _headers にその表現は無く、複数ルールが一致すると値がカンマで連結される
-# (= CSP が2本になりブラウザは積集合を取るのでサンドボックスが壊れる)。
-# そのため `! Header-Name` で先行ルール分を明示的に剥がしてから貼り直す。
-# 併せて、既定の html_handling が /sandbox.html を /sandbox へ 307 するので
-# 両方のパスに同じ緩和ヘッダーを当てている。
+# ⚠️ vercel.json excluded the sandbox with a negative lookahead `/((?!sandbox\.html).*)`,
+# but _headers has no such syntax, and when several rules match, their values are
+# joined with commas (= two CSPs, and the browser takes their intersection, which
+# breaks the sandbox). So `! Header-Name` explicitly strips the earlier rule's value
+# before setting it again. Also, the default html_handling 307-redirects
+# /sandbox.html to /sandbox, so the same relaxed headers are applied to both paths.
 
 /*
   Content-Security-Policy: default-src 'self'; script-src 'self' https://static.cloudflareinsights.com; style-src 'self'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://cloudflareinsights.com; worker-src 'self' blob:; frame-src 'self'; child-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
@@ -17,8 +17,8 @@
   Permissions-Policy: camera=(), microphone=(), geolocation=()
   Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
 
-# 学習者のコードを実行する不透明オリジンのサンドボックス。inline/eval を
-# 許す代わりに connect-src を none にして外部通信を断つ。
+# Opaque-origin sandbox that runs the learner's code. In exchange for allowing
+# inline/eval, connect-src is set to none to cut off external requests.
 /sandbox.html
   ! Content-Security-Policy
   Content-Security-Policy: default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; frame-ancestors 'self'; base-uri 'none'; form-action 'none'
@@ -35,7 +35,7 @@
   ! Referrer-Policy
   Referrer-Policy: no-referrer
 
-# Vite が内容ハッシュ付きで吐くので恒久キャッシュ可。Vercel が自動で付けて
-# いた immutable 相当を明示する。
+# Vite emits these with content hashes, so they can be cached forever. This makes
+# explicit the immutable caching that Vercel used to add automatically.
 /assets/*
   Cache-Control: public, max-age=31536000, immutable

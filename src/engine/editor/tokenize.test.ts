@@ -63,4 +63,9 @@ describe("number edge cases", () => {
     expect(typeOf(t, ".")).toBe("punct");
     expect(typeOf(t, ".5")).toBe("number");
   });
+
+  it("treats a dot at the very end of the source as punctuation", () => {
+    const t = tokenizeGlsl("a.");
+    expect(typeOf(t, ".")).toBe("punct");
+  });
 });

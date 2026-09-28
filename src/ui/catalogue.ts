@@ -2,9 +2,14 @@
 // grouped by domain (GLSL shaders vs Three.js scenes), each listing its lessons
 // with completion marks and a progress bar.
 
-import { TRACKS } from "../engine/content/index.js";
+import { LESSONS, TRACKS, lessonById } from "../engine/content/index.js";
 import type { Domain, Track } from "../engine/content/types.js";
-import { completion, loadCompleted, type ProgressStore } from "../engine/progress.js";
+import {
+  completion,
+  firstIncomplete,
+  loadCompleted,
+  type ProgressStore,
+} from "../engine/progress.js";
 import { el } from "./dom.js";
 
 const SECTIONS: ReadonlyArray<{ domain: Domain; title: string; blurb: string }> = [
@@ -38,9 +43,16 @@ function trackCard(
   const list = el("div", { class: "lesson-list" });
   for (const lesson of track.lessons) {
     const done = completedSet.has(lesson.id);
-    const row = el("button", { class: `lesson-row${done ? " is-done" : ""}` });
-    row.append(el("span", { class: "lesson-row__mark", text: done ? "✓" : "○" }));
+    const row = el("button", {
+      class: `lesson-row${done ? " is-done" : ""}`,
+      attrs: { type: "button", "data-lesson": lesson.id },
+    });
+    // The mark is decoration; the state is also given in words (SHIG 70, 94).
+    row.append(
+      el("span", { class: "lesson-row__mark", text: done ? "✓" : "○", attrs: { "aria-hidden": "true" } }),
+    );
     row.append(el("span", { text: lesson.title }));
+    row.append(el("span", { class: "visually-hidden", text: done ? "（クリア済み）" : "（未クリア）" }));
     row.addEventListener("click", () => onOpen(lesson.id));
     list.append(row);
   }
@@ -56,6 +68,32 @@ function trackCard(
   card.append(meta);
 
   return card;
+}
+
+/** "続きから" entry: the first unfinished lesson, one tap away (SHIG 20, 12). */
+function resumeBlock(completed: readonly string[], onOpen: (lessonId: string) => void): HTMLElement {
+  const ids = LESSONS.map((l) => l.id);
+  const prog = completion(completed, ids);
+  const nextId = firstIncomplete(completed, ids);
+  const next = nextId ? lessonById(nextId) : undefined;
+
+  const box = el("div", { class: "resume" });
+  const status = el("p", { class: "resume__status" });
+  status.append(document.createTextNode("クリアしたレッスン "));
+  status.append(el("b", { text: `${prog.done} / ${prog.total}` }));
+  box.append(status);
+  if (next) {
+    const btn = el("button", {
+      class: "btn btn--primary resume__btn",
+      text: `${prog.done === 0 ? "はじめる" : "続きから"}「${next.title}」`,
+      attrs: { type: "button" },
+    });
+    btn.addEventListener("click", () => onOpen(next.id));
+    box.append(btn);
+  } else {
+    box.append(el("p", { class: "resume__done", text: "すべてのレッスンをクリアしました。" }));
+  }
+  return box;
 }
 
 export function renderCatalogue(
@@ -75,6 +113,7 @@ export function renderCatalogue(
     }),
   );
   wrap.append(intro);
+  wrap.append(resumeBlock(completed, onOpen));
 
   for (const section of SECTIONS) {
     const tracks = TRACKS.filter((t) => t.domain === section.domain);

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   completion,
+  firstIncomplete,
   isComplete,
   loadCompleted,
   markComplete,
@@ -51,5 +52,17 @@ describe("completion", () => {
   });
   it("is zero ratio with no lessons", () => {
     expect(completion([], [])).toEqual({ done: 0, total: 0, ratio: 0 });
+  });
+});
+
+describe("firstIncomplete", () => {
+  it("returns the first lesson in order that is not completed", () => {
+    expect(firstIncomplete(["a", "c"], ["a", "b", "c"])).toBe("b");
+  });
+  it("returns the first lesson when nothing is done", () => {
+    expect(firstIncomplete([], ["a", "b"])).toBe("a");
+  });
+  it("returns undefined when everything is done", () => {
+    expect(firstIncomplete(["b", "a"], ["a", "b"])).toBeUndefined();
   });
 });

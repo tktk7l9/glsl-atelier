@@ -54,3 +54,13 @@ export function completion(
   const total = lessonIds.length;
   return { done, total, ratio: total === 0 ? 0 : done / total };
 }
+
+/** The first of `lessonIds` (catalogue order) not in `completed`, or undefined
+ *  when all are done. Drives the catalogue's "続きから" entry (SHIG 20, 12). */
+export function firstIncomplete(
+  completed: readonly string[],
+  lessonIds: readonly string[],
+): string | undefined {
+  const set = new Set(completed);
+  return lessonIds.find((id) => !set.has(id));
+}

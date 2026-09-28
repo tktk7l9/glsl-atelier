@@ -8,9 +8,10 @@
 import { el } from "./ui/dom.js";
 import { createEditor, type Editor } from "./ui/editor.js";
 import { evaluate } from "./engine/validate/run.js";
-import { domainOf, lessonById, nextLesson } from "./engine/content/index.js";
+import { domainOf, lessonById, nextLesson, trackOf } from "./engine/content/index.js";
 import type { Lesson } from "./engine/content/types.js";
 import { markComplete, type ProgressStore } from "./engine/progress.js";
+import { loadDraft, saveDraft } from "./engine/drafts.js";
 import {
   createShaderGrader,
   createShaderPreview,
@@ -60,8 +61,17 @@ function debounce<T extends (...args: never[]) => void>(fn: T, ms: number): T {
 export function createApp(callbacks: AppCallbacks): AppController {
   const root = el("div", { class: "lesson" });
 
-  // ---- left: doc + editor + actions ----
+  // ---- explanation panel ----
+  // The lesson is split into an explanation panel and a workbench panel so that
+  // on narrow screens the preview sits between them, right above the editor
+  // (SHIG 30, 66). On wide screens both panels stack in the left column.
   const doc = el("div", { class: "panel lesson__doc" });
+  const nav = el("div", { class: "lesson__nav" });
+  // A plain link to "#" routes back to the catalogue and works without the
+  // browser's back button in a standalone PWA (SHIG 60, 82).
+  const backLink = el("a", { class: "back-link", text: "← レッスン一覧", attrs: { href: "#" } });
+  const position = el("span", { class: "lesson__position" });
+  nav.append(backLink, position);
   const title = el("h2");
   const explain = el("div", { class: "explain" });
   const task = el("div", { class: "task" });
@@ -69,17 +79,35 @@ export function createApp(callbacks: AppCallbacks): AppController {
   const editor: Editor = createEditor("editor");
   const errorBar = el("div", { class: "error-bar", attrs: { role: "status", "aria-live": "polite" } });
 
-  const checkBtn = el("button", { class: "btn btn--primary", text: "チェック" });
+  const checkBtn = el("button", {
+    class: "btn btn--primary",
+    text: "チェック",
+    attrs: { title: "⌘/Ctrl + Enter でもチェックできます" },
+  });
   const resetBtn = el("button", { class: "btn btn--ghost", text: "リセット" });
-  const hintBtn = el("button", { class: "btn btn--ghost", text: "ヒント" });
+  const hintBtn = el("button", { class: "btn btn--ghost" });
   const solBtn = el("button", { class: "btn btn--ghost", text: "解答を見る" });
   const nextBtn = el("button", { class: "btn", text: "次のレッスン →" });
   const actions = el("div", { class: "actions" });
   actions.append(checkBtn, resetBtn, hintBtn, solBtn, nextBtn);
+  // The Cmd/Ctrl+Enter shortcut was invisible; say it where the eye already is
+  // (SHIG 22, 31). Hidden on touch-only devices via CSS.
+  const shortcut = el("p", { class: "shortcut-hint", text: "⌘/Ctrl + Enter でもチェックできます" });
+
+  // Undo notice for actions that replace the editor contents (SHIG 57, 54):
+  // no confirm dialog, just do it and offer a way back next to the buttons.
+  const notice = el("div", { class: "notice", attrs: { role: "status", "aria-live": "polite" } });
+  const noticeText = el("span");
+  const undoBtn = el("button", { class: "btn btn--small", text: "元に戻す", attrs: { type: "button" } });
+  notice.append(noticeText, undoBtn);
 
   const banner = el("div", { class: "banner", attrs: { role: "status", "aria-live": "polite" } });
   const hints = el("div", { class: "hints" });
-  doc.append(title, explain, task, mdn, editor.root, errorBar, actions, banner, hints);
+  doc.append(nav, title, explain, task, mdn);
+
+  // ---- workbench panel ----
+  const work = el("div", { class: "panel lesson__work" });
+  work.append(editor.root, errorBar, actions, shortcut, notice, banner, hints);
 
   // ---- right: live preview ----
   const viz = el("div", { class: "viz" });
@@ -98,7 +126,7 @@ export function createApp(callbacks: AppCallbacks): AppController {
   }) as HTMLIFrameElement;
   vizBody.append(shaderCanvas, sceneFrame);
   viz.append(vizHead, vizBody);
-  root.append(doc, viz);
+  root.append(doc, viz, work);
 
   // ---- lazily-created runtimes ----
   let shaderPreview: ShaderPreview | null = null;
@@ -108,6 +136,7 @@ export function createApp(callbacks: AppCallbacks): AppController {
   let current: Lesson | null = null;
   let domain: "glsl" | "three" = "glsl";
   let hintsShown = 0;
+  let undoCode: string | null = null;
 
   function ensureShader(): { preview: ShaderPreview; grader: ShaderGrader } {
     if (!shaderPreview) shaderPreview = createShaderPreview(shaderCanvas, callbacks.reducedMotion);
@@ -180,13 +209,29 @@ export function createApp(callbacks: AppCallbacks): AppController {
     }
   }
 
+  /** Show how many hints are left instead of silently disabling (SHIG 12, 25). */
+  function updateHintButton(): void {
+    const left = current ? current.challenge.hints.length - hintsShown : 0;
+    hintBtn.disabled = left <= 0;
+    hintBtn.textContent = left > 0 ? `ヒント（残り${left}）` : "ヒントはここまで";
+  }
+
   function revealHint(): void {
     if (!current) return;
     if (hintsShown < current.challenge.hints.length) {
       hints.append(el("div", { class: "hint", text: `💡 ${current.challenge.hints[hintsShown]}` }));
       hintsShown++;
     }
-    if (hintsShown >= current.challenge.hints.length) hintBtn.disabled = true;
+    updateHintButton();
+  }
+
+  function persistDraft(): void {
+    if (current) saveDraft(store, current.id, editor.getValue(), current.challenge.starterCode);
+  }
+
+  function hideNotice(): void {
+    undoCode = null;
+    notice.classList.remove("is-show");
   }
 
   function loadCode(code: string): void {
@@ -196,15 +241,38 @@ export function createApp(callbacks: AppCallbacks): AppController {
     liveUpdate();
   }
 
-  editor.onInput(liveUpdate);
+  /** Replace the editor contents and offer an undo (SHIG 54, 57, 38). */
+  function replaceCode(code: string, message: string): void {
+    const previous = editor.getValue();
+    if (previous === code) return;
+    loadCode(code);
+    persistDraft();
+    undoCode = previous;
+    noticeText.textContent = message;
+    notice.classList.add("is-show");
+  }
+
+  const saveLater = debounce(persistDraft, 400);
+  editor.onInput(() => {
+    hideNotice();
+    liveUpdate();
+    saveLater();
+  });
+  undoBtn.addEventListener("click", () => {
+    if (undoCode === null) return;
+    loadCode(undoCode);
+    persistDraft();
+    hideNotice();
+    editor.focus();
+  });
   editor.onSubmit(() => void check());
   checkBtn.addEventListener("click", () => void check());
   resetBtn.addEventListener("click", () => {
-    if (current) loadCode(current.challenge.starterCode);
+    if (current) replaceCode(current.challenge.starterCode, "最初のコードに戻しました。");
   });
   hintBtn.addEventListener("click", revealHint);
   solBtn.addEventListener("click", () => {
-    if (current) loadCode(current.challenge.solution);
+    if (current) replaceCode(current.challenge.solution, "解答のコードを表示しました。");
   });
   nextBtn.addEventListener("click", () => {
     const n = current ? nextLesson(current.id) : undefined;
@@ -215,11 +283,20 @@ export function createApp(callbacks: AppCallbacks): AppController {
   async function open(lessonId: string): Promise<void> {
     const lesson = lessonById(lessonId);
     if (!lesson) return;
+    // Flush a pending debounced save before the editor is reused.
+    persistDraft();
     current = lesson;
     domain = domainOf(lessonId) ?? "glsl";
     hintsShown = 0;
-    hintBtn.disabled = false;
+    updateHintButton();
+    hideNotice();
     nextBtn.classList.remove("btn--primary");
+    // On the last lesson the button returns to the list; say so (SHIG 37).
+    nextBtn.textContent = nextLesson(lessonId) ? "次のレッスン →" : "レッスン一覧へ";
+    const track = trackOf(lessonId);
+    position.textContent = track
+      ? `${track.title} · ${track.lessons.findIndex((l) => l.id === lessonId) + 1} / ${track.lessons.length}`
+      : "";
     clearBanner();
     setError("");
     hints.textContent = "";
@@ -245,7 +322,7 @@ export function createApp(callbacks: AppCallbacks): AppController {
     title.tabIndex = -1;
     title.focus({ preventScroll: true });
 
-    loadCode(lesson.challenge.starterCode);
+    loadCode(loadDraft(store, lesson.id) ?? lesson.challenge.starterCode);
     if (showShader) ensureShader().preview.resize();
   }
 

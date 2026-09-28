@@ -84,20 +84,42 @@ async function ensureApp(): Promise<AppController> {
   return app;
 }
 
+const BASE_TITLE = document.title;
+
+// Where the learner was in the catalogue, so returning from a lesson lands on
+// the same spot and on the row they opened (SHIG 59, 76).
+let onCatalogue = false;
+let catalogueScroll = 0;
+let lastLessonId: string | null = null;
+
 function showCatalogue(): void {
   crumb.textContent = "";
+  document.title = BASE_TITLE;
   main.replaceChildren(renderCatalogue(store, (id) => navigateTo(id)));
+  if (lastLessonId) {
+    window.scrollTo(0, catalogueScroll);
+    main
+      .querySelector<HTMLElement>(`[data-lesson="${CSS.escape(lastLessonId)}"]`)
+      ?.focus({ preventScroll: true });
+  }
+  onCatalogue = true;
 }
 
 async function showLesson(id: string): Promise<void> {
+  if (onCatalogue) catalogueScroll = window.scrollY;
+  onCatalogue = false;
+  lastLessonId = id;
   const controller = await ensureApp();
   const lesson = lessonById(id);
   const track = trackOf(id);
   crumb.textContent = "";
   if (track && lesson) {
     crumb.append(document.createTextNode(`${track.title} › `), el("b", { text: lesson.title }));
+    document.title = `${lesson.title} — GLSL Atelier`;
   }
   main.replaceChildren(controller.root);
+  // A lesson always starts at its top, whatever the previous scroll was.
+  window.scrollTo(0, 0);
   await controller.open(id);
 }
 

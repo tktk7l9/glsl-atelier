@@ -2,8 +2,8 @@
  * glsl-atelier — Cloudflare Workers (static assets only)
  * https://developers.cloudflare.com/workers/static-assets/
  *
- * ビルド成果物は純粋な静的ファイルなので Worker スクリプト(main)は無い。
- * セキュリティヘッダーは public/_headers が dist へコピーされて効く。
+ * The build output is purely static files, so there is no Worker script (main).
+ * Security headers take effect from public/_headers, which is copied into dist.
  */
 {
   "$schema": "node_modules/wrangler/config-schema.json",
@@ -11,12 +11,12 @@
   "compatibility_date": "2026-08-11",
   "assets": {
     "directory": "./dist",
-    // Vercel も rewrite 無しの素の静的配信だったので未知パスは 404 のまま。
+    // Vercel also served plain static files without rewrites, so unknown paths stay 404.
     "not_found_handling": "404-page",
-    // html_handling は既定(auto-trailing-slash)のまま。"none" にすると
-    // /sandbox.html の 307 は消えるが / が index.html に解決されなくなり
-    // トップが 404 になる(実測済み)。307 先の /sandbox にも _headers 側で
-    // 同じ緩和ヘッダーを当てて対処している。
+    // html_handling stays at the default (auto-trailing-slash). Setting it to "none"
+    // removes the /sandbox.html 307, but / no longer resolves to index.html and
+    // the top page becomes 404 (verified). Instead, _headers applies the same
+    // relaxed headers to the 307 target /sandbox as well.
   },
   "observability": {
     "enabled": true,

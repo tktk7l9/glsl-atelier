@@ -1,6 +1,6 @@
-/* GLSL Atelier — 暗い「宇宙天文台 / Shader Lab」テーマ。
-   深宇宙の闇・星雲グラデ・シアン↔マゼンタの発光・bloom。
-   css-atelier の明るい製図スタジオ（方眼紙・bloom なし）とは正反対。 */
+/* GLSL Atelier — dark "space observatory / Shader Lab" theme.
+   Deep-space darkness, nebula gradients, cyan↔magenta glow, bloom.
+   The exact opposite of css-atelier's bright drafting studio (graph paper, no bloom). */
 
 :root {
   color-scheme: dark;

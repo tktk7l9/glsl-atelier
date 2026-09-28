@@ -32,7 +32,7 @@ describe("describePoint", () => {
 });
 
 describe("describeRect", () => {
-  it("calls a full-canvas rect 画面全体", () => {
+  it("calls a full-canvas rect the whole screen", () => {
     expect(describeRect([0, 0, 1, 1])).toBe("画面全体");
   });
   it("describes a partial rect by its centre", () => {

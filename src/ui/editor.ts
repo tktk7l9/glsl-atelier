@@ -29,12 +29,19 @@ export interface Editor {
   onInput(cb: (v: string) => void): void;
   /** Fired on Cmd/Ctrl+Enter (a "submit/check" shortcut). */
   onSubmit(cb: () => void): void;
+  /** Point the textarea at an element describing its keyboard behaviour. */
+  setDescribedBy(id: string): void;
   focus(): void;
 }
 
+let editorCount = 0;
+
 export function createEditor(label: string): Editor {
   const root = el("div", { class: "editor-wrap" });
-  const labelEl = el("div", { class: "editor-label", text: label });
+  // The visible label is the accessible name, so it follows setLang() and
+  // never drifts from what sighted users read (SHIG 11).
+  const labelId = `editor-label-${++editorCount}`;
+  const labelEl = el("div", { class: "editor-label", text: label, attrs: { id: labelId } });
   root.append(labelEl);
 
   const stack = el("div", { class: "editor-stack" });
@@ -45,7 +52,7 @@ export function createEditor(label: string): Editor {
       autocapitalize: "off",
       autocomplete: "off",
       autocorrect: "off",
-      "aria-label": `${label} エディタ`,
+      "aria-labelledby": labelId,
     },
   });
   stack.append(pre, textarea);
@@ -126,7 +133,7 @@ export function createEditor(label: string): Editor {
     },
     setLang(next) {
       lang = next;
-      labelEl.textContent = next === "glsl" ? "fragment shader (GLSL)" : "scene code (JavaScript)";
+      labelEl.textContent = next === "glsl" ? "コードエディタ (GLSL フラグメントシェーダー)" : "コードエディタ (Three.js / JavaScript)";
       render();
     },
     onInput(cb) {
@@ -134,6 +141,9 @@ export function createEditor(label: string): Editor {
     },
     onSubmit(cb) {
       submitListener = cb;
+    },
+    setDescribedBy(id) {
+      textarea.setAttribute("aria-describedby", id);
     },
     focus: () => textarea.focus(),
   };

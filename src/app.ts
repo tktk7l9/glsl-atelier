@@ -66,17 +66,20 @@ export function createApp(callbacks: AppCallbacks): AppController {
   // on narrow screens the preview sits between them, right above the editor
   // (SHIG 30, 66). On wide screens both panels stack in the left column.
   const doc = el("div", { class: "panel lesson__doc" });
-  const nav = el("div", { class: "lesson__nav" });
+  // A landmark so screen-reader users can jump straight to the way out (SHIG 59, 60).
+  const nav = el("nav", { class: "lesson__nav", attrs: { "aria-label": "レッスンの移動" } });
   // A plain link to "#" routes back to the catalogue and works without the
   // browser's back button in a standalone PWA (SHIG 60, 82).
   const backLink = el("a", { class: "back-link", text: "← レッスン一覧", attrs: { href: "#" } });
   const position = el("span", { class: "lesson__position" });
   nav.append(backLink, position);
-  const title = el("h2");
+  // The lesson title is the page's main heading: the catalogue's h1 is gone
+  // once a lesson is open, and document.title carries the same text (SHIG 59).
+  const title = el("h1", { class: "lesson__title" });
   const explain = el("div", { class: "explain" });
   const task = el("div", { class: "task" });
   const mdn = el("a", { class: "mdn-link", attrs: { target: "_blank", rel: "noopener" } });
-  const editor: Editor = createEditor("editor");
+  const editor: Editor = createEditor("コードエディタ");
   const errorBar = el("div", { class: "error-bar", attrs: { role: "status", "aria-live": "polite" } });
 
   const checkBtn = el("button", {
@@ -91,8 +94,15 @@ export function createApp(callbacks: AppCallbacks): AppController {
   const actions = el("div", { class: "actions" });
   actions.append(checkBtn, resetBtn, hintBtn, solBtn, nextBtn);
   // The Cmd/Ctrl+Enter shortcut was invisible; say it where the eye already is
-  // (SHIG 22, 31). Hidden on touch-only devices via CSS.
-  const shortcut = el("p", { class: "shortcut-hint", text: "⌘/Ctrl + Enter でもチェックできます" });
+  // (SHIG 22, 31). Tab indents inside the editor, so keyboard users must be
+  // told how to leave it (WCAG 2.1.2); the editor points at this text via
+  // aria-describedby. Hidden on touch-only devices via CSS.
+  const shortcut = el("p", {
+    class: "shortcut-hint",
+    text: "⌘/Ctrl + Enter でチェック · Tab でインデント · Esc でエディタから抜ける",
+    attrs: { id: "editor-keys" },
+  });
+  editor.setDescribedBy("editor-keys");
 
   // Undo notice for actions that replace the editor contents (SHIG 57, 54):
   // no confirm dialog, just do it and offer a way back next to the buttons.
@@ -102,7 +112,8 @@ export function createApp(callbacks: AppCallbacks): AppController {
   notice.append(noticeText, undoBtn);
 
   const banner = el("div", { class: "banner", attrs: { role: "status", "aria-live": "polite" } });
-  const hints = el("div", { class: "hints" });
+  // Hints are appended out of focus; announce them (SHIG 25).
+  const hints = el("div", { class: "hints", attrs: { "aria-live": "polite" } });
   doc.append(nav, title, explain, task, mdn);
 
   // ---- workbench panel ----
@@ -219,7 +230,10 @@ export function createApp(callbacks: AppCallbacks): AppController {
   function revealHint(): void {
     if (!current) return;
     if (hintsShown < current.challenge.hints.length) {
-      hints.append(el("div", { class: "hint", text: `💡 ${current.challenge.hints[hintsShown]}` }));
+      const hint = el("div", { class: "hint" });
+      hint.append(el("span", { text: "💡 ", attrs: { "aria-hidden": "true" } }));
+      hint.append(document.createTextNode(current.challenge.hints[hintsShown]));
+      hints.append(hint);
       hintsShown++;
     }
     updateHintButton();

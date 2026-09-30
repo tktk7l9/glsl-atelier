@@ -50,3 +50,22 @@ export function describeDirection(axis: "x" | "y", dir: "up" | "down", ch: Chann
   const [from, to] = dir === "up" ? [low, high] : [high, low];
   return `${from} → ${to} に向かって${CHANNEL_GROWS[ch]}`;
 }
+
+/**
+ * Turn a WebGL shader info log into one learner-facing line per message
+ * (SHIG 55, 11): "ERROR: 0:7: 'vec' : undeclared identifier" becomes
+ * "7行目: 'vec' : undeclared identifier". The severity word and the shader
+ * index are implementation noise; the line number is what the learner needs.
+ * Unparseable lines are kept as they are; blanks and duplicates are dropped.
+ */
+export function describeCompileLog(log: string): string[] {
+  const out: string[] = [];
+  for (const raw of log.split("\n")) {
+    const line = raw.trim();
+    if (line === "") continue;
+    const m = /^(?:ERROR|WARNING):\s*(?:\d+:)?(\d+):\s*(.*)$/.exec(line);
+    const text = m ? `${m[1]}行目: ${m[2]}` : line;
+    if (!out.includes(text)) out.push(text);
+  }
+  return out;
+}

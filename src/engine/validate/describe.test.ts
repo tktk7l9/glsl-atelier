@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { describeDirection, describePoint, describeRect, formatRgb, formatVec3 } from "./describe.js";
+import {
+  describeCompileLog,
+  describeDirection,
+  describePoint,
+  describeRect,
+  formatRgb,
+  formatVec3,
+} from "./describe.js";
 
 describe("formatRgb", () => {
   it("names each channel with two decimals", () => {
@@ -47,5 +54,26 @@ describe("describeDirection", () => {
     expect(describeDirection("y", "up", "g")).toBe("下 → 上 に向かって緑が強くなる");
     expect(describeDirection("y", "down", "r")).toBe("上 → 下 に向かって赤が強くなる");
     expect(describeDirection("x", "up", "b")).toBe("左 → 右 に向かって青が強くなる");
+  });
+});
+
+describe("describeCompileLog", () => {
+  it("turns a GLSL info log into per-line learner messages (SHIG 55, 11)", () => {
+    const log = "ERROR: 0:7: 'vec' : undeclared identifier\nERROR: 0:7: 'vec' : no matching overloaded function found\n";
+    expect(describeCompileLog(log)).toEqual([
+      "7行目: 'vec' : undeclared identifier",
+      "7行目: 'vec' : no matching overloaded function found",
+    ]);
+  });
+  it("drops duplicate lines and blank lines", () => {
+    expect(describeCompileLog("ERROR: 0:3: x\n\nERROR: 0:3: x\n")).toEqual(["3行目: x"]);
+  });
+  it("keeps lines it cannot parse as they are", () => {
+    expect(describeCompileLog("WebGL を初期化できません")).toEqual(["WebGL を初期化できません"]);
+    expect(describeCompileLog("  ")).toEqual([]);
+  });
+  it("handles WARNING and messages without a shader index", () => {
+    expect(describeCompileLog("WARNING: 0:2: extension not supported")).toEqual(["2行目: extension not supported"]);
+    expect(describeCompileLog("ERROR: 12: unexpected token")).toEqual(["12行目: unexpected token"]);
   });
 });

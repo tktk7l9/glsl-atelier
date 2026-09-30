@@ -318,6 +318,9 @@ export function createApp(callbacks: AppCallbacks): AppController {
     if (current) replaceCode(current.challenge.starterCode, "最初のコードに戻しました。");
   });
   hintBtn.addEventListener("click", revealHint);
+  // Label the hint button from the start: the view is mounted a tick before
+  // open() runs, and an unlabelled enabled button must never be visible.
+  updateHintButton();
   solBtn.addEventListener("click", () => {
     if (current) replaceCode(current.challenge.solution, "解答のコードを表示しました。");
   });

@@ -200,8 +200,9 @@ export function createApp(callbacks: AppCallbacks): AppController {
 
   function setError(message: string): void {
     // "ERROR: 0:7: …" → "7行目: …" (SHIG 55, 11).
-    errorBar.textContent = describeCompileLog(message).join("\n");
-    errorBar.classList.toggle("is-show", message.trim() !== "");
+    const lines = describeCompileLog(message);
+    errorBar.textContent = lines.join("\n");
+    errorBar.classList.toggle("is-show", lines.length > 0);
   }
 
   /** Say that a (possibly slow) sandbox check is running (SHIG 65, 25). */
@@ -224,7 +225,8 @@ export function createApp(callbacks: AppCallbacks): AppController {
   }, 200);
 
   async function check(): Promise<void> {
-    if (!current) return;
+    // Cmd/Ctrl+Enter bypasses the disabled button; one sandbox run at a time.
+    if (!current || checkBtn.disabled) return;
     const lesson = current;
     const code = editor.getValue();
     let failures: readonly string[];

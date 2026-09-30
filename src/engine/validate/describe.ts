@@ -61,7 +61,9 @@ export function describeDirection(axis: "x" | "y", dir: "up" | "down", ch: Chann
 export function describeCompileLog(log: string): string[] {
   const out: string[] = [];
   for (const raw of log.split("\n")) {
-    const line = raw.trim();
+    // Drivers end the info log with a NUL byte; drop control characters so
+    // it does not show up as a stray line.
+    const line = raw.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "").trim();
     if (line === "") continue;
     const m = /^(?:ERROR|WARNING):\s*(?:\d+:)?(\d+):\s*(.*)$/.exec(line);
     const text = m ? `${m[1]}行目: ${m[2]}` : line;

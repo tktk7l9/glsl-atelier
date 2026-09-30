@@ -56,6 +56,14 @@ const crumb = el("div", { class: "crumb" });
 // only under 640px.
 const topbarBack = el("a", { class: "topbar-back", text: "レッスン一覧", attrs: { href: "#" } });
 topbar.append(brand, el("div", { class: "topbar-spacer" }), crumb, topbarBack);
+// The pinned preview sits right under the sticky bar, whose height depends on
+// width, pointer type and whether the back link shows; a fixed offset let the
+// bar cover the preview's header on phones and tablets.
+if (typeof ResizeObserver !== "undefined") {
+  new ResizeObserver(() => {
+    document.documentElement.style.setProperty("--topbar-h", `${topbar.offsetHeight}px`);
+  }).observe(topbar);
+}
 
 const main = el("main");
 

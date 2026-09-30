@@ -48,3 +48,17 @@ describe("keyboard focus", () => {
     expect(blocks(".editor-stack:focus-within").join("")).toMatch(/border-color:\s*var\(--cyan\)/);
   });
 });
+
+describe("phone back link in the top bar", () => {
+  it("is shown only through .topbar-back.is-show (never on the catalogue or wide screens)", () => {
+    const re = /([^{}]+)\{([^{}]*)\}/g;
+    const showing: string[] = [];
+    for (let m = re.exec(rules); m; m = re.exec(rules)) {
+      const hits = m[1].split(",").map((s) => s.trim()).filter((s) => s.startsWith(".topbar-back"));
+      if (hits.length === 0) continue;
+      const display = /(?:^|;|\s)display:\s*([\w-]+)/.exec(m[2]);
+      if (display && display[1] !== "none") showing.push(...hits);
+    }
+    expect(showing).toEqual([".topbar-back.is-show"]);
+  });
+});

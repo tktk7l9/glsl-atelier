@@ -770,7 +770,8 @@ main {
      hints all happen with the result in sight (SHIG 30, 66). */
   .viz {
     position: sticky;
-    top: 50px;
+    /* The bar's height changes with width and pointer; main.ts measures it. */
+    top: var(--topbar-h, 50px);
     z-index: 10;
   }
   .viz__body {
@@ -790,7 +791,7 @@ main {
     min-height: 48px;
   }
   .topbar-back.is-show {
-    display: inline-block;
+    display: inline-flex;
   }
   main {
     padding: 20px 16px 40px;
@@ -806,10 +807,14 @@ main {
   .topbar-back {
     min-height: 44px;
   }
+  /* .topbar-back is left out on purpose: its display belongs to the
+     .is-show / 640px rule, or it would show on the catalogue and on tablets. */
   .back-link,
-  .step-link,
-  .topbar-back {
+  .step-link {
     display: inline-flex;
+    align-items: center;
+  }
+  .topbar-back {
     align-items: center;
   }
   .btn,

@@ -68,6 +68,10 @@ describe("describeCompileLog", () => {
   it("drops duplicate lines and blank lines", () => {
     expect(describeCompileLog("ERROR: 0:3: x\n\nERROR: 0:3: x\n")).toEqual(["3行目: x"]);
   });
+  it("drops the trailing NUL byte drivers append to the log", () => {
+    expect(describeCompileLog("ERROR: 0:3: 'vec' : x\n\u0000")).toEqual(["3行目: 'vec' : x"]);
+    expect(describeCompileLog("ERROR: 0:3: y\u0000")).toEqual(["3行目: y"]);
+  });
   it("keeps lines it cannot parse as they are", () => {
     expect(describeCompileLog("WebGL を初期化できません")).toEqual(["WebGL を初期化できません"]);
     expect(describeCompileLog("  ")).toEqual([]);

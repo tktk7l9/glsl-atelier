@@ -24,3 +24,14 @@ export function el<K extends keyof HTMLElementTagNameMap>(
   }
   return node;
 }
+
+/**
+ * True for an unmodified primary-button click. Links that route in-app should
+ * only take over these; Cmd/Ctrl/Shift/Alt or middle clicks keep the browser's
+ * own behaviour (open in a new tab/window, download).
+ */
+export function isPlainClick(
+  e: Pick<MouseEvent, "button" | "metaKey" | "ctrlKey" | "shiftKey" | "altKey" | "defaultPrevented">,
+): boolean {
+  return !e.defaultPrevented && e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey;
+}

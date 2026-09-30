@@ -5,11 +5,14 @@
 import { describe, expect, it } from "vitest";
 import css from "./styles.css?raw";
 
+/** The stylesheet without comments, so a comment never sticks to a selector. */
+const rules = css.replace(/\/\*[\s\S]*?\*\//g, "");
+
 /** Every declaration block whose selector list is exactly `selector`. */
 function blocks(selector: string): string[] {
   const out: string[] = [];
   const re = /([^{}]+)\{([^{}]*)\}/g;
-  for (let m = re.exec(css); m; m = re.exec(css)) {
+  for (let m = re.exec(rules); m; m = re.exec(rules)) {
     if (m[1].trim() === selector) out.push(m[2]);
   }
   return out;
@@ -26,5 +29,22 @@ describe("catalogue lesson marks", () => {
   it("defines the visually-hidden helper once", () => {
     expect(blocks(".visually-hidden")).toHaveLength(1);
     expect(css).not.toMatch(/\.is-done \.visually-hidden/);
+  });
+});
+
+describe("keyboard focus", () => {
+  it("rings every focused link and button", () => {
+    expect(blocks("a:focus-visible,\nbutton:focus-visible").join("")).toMatch(/outline:\s*2px solid/);
+  });
+
+  it("does not reshape buttons when they take focus", () => {
+    for (const body of blocks("a:focus-visible,\nbutton:focus-visible")) {
+      expect(body).not.toMatch(/border-radius/);
+    }
+    expect(blocks("button:focus-visible")).toHaveLength(0);
+  });
+
+  it("frames the editor while its textarea (outline off) has focus", () => {
+    expect(blocks(".editor-stack:focus-within").join("")).toMatch(/border-color:\s*var\(--cyan\)/);
   });
 });

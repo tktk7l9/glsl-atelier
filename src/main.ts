@@ -3,7 +3,7 @@
 // dynamically imported so the cold load stays light.
 
 import "./styles.css";
-import { byId, el } from "./ui/dom.js";
+import { byId, el, isPlainClick } from "./ui/dom.js";
 import { renderCatalogue } from "./ui/catalogue.js";
 import { lessonById, trackOf } from "./engine/content/index.js";
 import type { ProgressStore } from "./engine/progress.js";
@@ -139,6 +139,8 @@ async function route(): Promise<void> {
 }
 
 brand.addEventListener("click", (e) => {
+  // Cmd/Ctrl/middle clicks keep link behaviour (open the catalogue in a new tab).
+  if (!isPlainClick(e)) return;
   e.preventDefault();
   navigateTo(null);
 });

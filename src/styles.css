@@ -83,6 +83,10 @@ a:focus-visible,
 button:focus-visible {
   outline: 2px solid var(--cyan);
   outline-offset: 2px;
+}
+/* Round the ring on bare text links only; buttons keep their own radius so
+   their corners do not jump when focused. */
+a:focus-visible {
   border-radius: 4px;
 }
 

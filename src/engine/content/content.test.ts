@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ValidatorSpec } from "../validate/primitives.js";
-import { LESSONS, TRACKS, domainOf, lessonById, nextLesson, trackOf } from "./index.js";
+import { LESSONS, TRACKS, domainOf, lessonById, nextLesson, prevLesson, trackOf } from "./index.js";
 
 /** Collect sourceMatches patterns the SOLUTION must satisfy (top-level + allOf,
  *  but not anyOf branches, where only one alternative needs to match). */
@@ -78,6 +78,12 @@ describe("index helpers", () => {
     expect(trackOf("nope")).toBeUndefined();
     expect(domainOf("nope")).toBeUndefined();
     expect(nextLesson("nope")).toBeUndefined();
+    expect(prevLesson("nope")).toBeUndefined();
+  });
+
+  it("walks lessons backwards and stops at the first (SHIG 81)", () => {
+    expect(prevLesson(LESSONS[1].id)).toBe(LESSONS[0]);
+    expect(prevLesson(LESSONS[0].id)).toBeUndefined();
   });
 
   it("walks lessons in order and ends with undefined", () => {

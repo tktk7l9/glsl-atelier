@@ -51,7 +51,19 @@ brand.append(el("span", { class: "brand__glyph", attrs: { "aria-hidden": "true" 
 brand.append(el("span", { class: "brand__name", text: "GLSL Atelier" }));
 brand.append(el("small", { text: "手を動かして学ぶ WebGL / Three.js" }));
 const crumb = el("div", { class: "crumb" });
-topbar.append(brand, el("div", { class: "topbar-spacer" }), crumb);
+// On phones the crumb is hidden and the panel's back link scrolls away; keep a
+// way back in the sticky bar while a lesson is open (SHIG 60, 82). CSS shows it
+// only under 640px.
+const topbarBack = el("a", { class: "topbar-back", text: "レッスン一覧", attrs: { href: "#" } });
+topbar.append(brand, el("div", { class: "topbar-spacer" }), crumb, topbarBack);
+// The pinned preview sits right under the sticky bar, whose height depends on
+// width, pointer type and whether the back link shows; a fixed offset let the
+// bar cover the preview's header on phones and tablets.
+if (typeof ResizeObserver !== "undefined") {
+  new ResizeObserver(() => {
+    document.documentElement.style.setProperty("--topbar-h", `${topbar.offsetHeight}px`);
+  }).observe(topbar);
+}
 
 const main = el("main");
 
@@ -96,6 +108,7 @@ let lastLessonId: string | null = null;
 
 function showCatalogue(): void {
   crumb.textContent = "";
+  topbarBack.classList.remove("is-show");
   document.title = BASE_TITLE;
   main.replaceChildren(renderCatalogue(store, (id) => navigateTo(id)));
   if (lastLessonId) {
@@ -115,6 +128,7 @@ async function showLesson(id: string): Promise<void> {
   const lesson = lessonById(id);
   const track = trackOf(id);
   crumb.textContent = "";
+  topbarBack.classList.add("is-show");
   if (track && lesson) {
     crumb.append(document.createTextNode(`${track.title} › `), el("b", { text: lesson.title }));
     document.title = `${lesson.title} — GLSL Atelier`;

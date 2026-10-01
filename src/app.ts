@@ -8,7 +8,8 @@
 import { el } from "./ui/dom.js";
 import { createEditor, type Editor } from "./ui/editor.js";
 import { evaluate } from "./engine/validate/run.js";
-import { domainOf, lessonById, nextLesson, trackOf } from "./engine/content/index.js";
+import { describeCompileLog } from "./engine/validate/describe.js";
+import { domainOf, lessonById, nextLesson, prevLesson, trackOf } from "./engine/content/index.js";
 import type { Lesson } from "./engine/content/types.js";
 import { markComplete, type ProgressStore } from "./engine/progress.js";
 import { loadDraft, saveDraft } from "./engine/drafts.js";
@@ -72,7 +73,15 @@ export function createApp(callbacks: AppCallbacks): AppController {
   // browser's back button in a standalone PWA (SHIG 60, 82).
   const backLink = el("a", { class: "back-link", text: "← レッスン一覧", attrs: { href: "#" } });
   const position = el("span", { class: "lesson__position" });
-  nav.append(backLink, position);
+  // Previous / next as plain hash links, left = back and right = forward
+  // (SHIG 81, 59). They live in the nav, apart from the editing actions (73).
+  const steps = el("span", { class: "lesson__steps" });
+  const prevLink = el("a", { class: "step-link", text: "← 前のレッスン" });
+  const nextLink = el("a", { class: "step-link", text: "次のレッスン →" });
+  steps.append(prevLink, nextLink);
+  const navRight = el("span", { class: "lesson__nav-right" });
+  navRight.append(position, steps);
+  nav.append(backLink, navRight);
   // The lesson title is the page's main heading: the catalogue's h1 is gone
   // once a lesson is open, and document.title carries the same text (SHIG 59).
   const title = el("h1", { class: "lesson__title" });
@@ -90,9 +99,8 @@ export function createApp(callbacks: AppCallbacks): AppController {
   const resetBtn = el("button", { class: "btn btn--ghost", text: "リセット" });
   const hintBtn = el("button", { class: "btn btn--ghost" });
   const solBtn = el("button", { class: "btn btn--ghost", text: "解答を見る" });
-  const nextBtn = el("button", { class: "btn", text: "次のレッスン →" });
   const actions = el("div", { class: "actions" });
-  actions.append(checkBtn, resetBtn, hintBtn, solBtn, nextBtn);
+  actions.append(checkBtn, resetBtn, hintBtn, solBtn);
   // The Cmd/Ctrl+Enter shortcut was invisible; say it where the eye already is
   // (SHIG 22, 31). Tab indents inside the editor, so keyboard users must be
   // told how to leave it (WCAG 2.1.2); the editor points at this text via
@@ -112,13 +120,18 @@ export function createApp(callbacks: AppCallbacks): AppController {
   notice.append(noticeText, undoBtn);
 
   const banner = el("div", { class: "banner", attrs: { role: "status", "aria-live": "polite" } });
+  // The one call to action after a pass lives in the banner, so there is a
+  // single highlighted button and the result leads straight on (SHIG 47, 61, 41).
+  const bannerNext = el("button", { class: "btn btn--primary", attrs: { type: "button" } });
   // Hints are appended out of focus; announce them (SHIG 25).
   const hints = el("div", { class: "hints", attrs: { "aria-live": "polite" } });
-  doc.append(nav, title, explain, task, mdn);
+  doc.append(nav, title, explain, mdn);
 
   // ---- workbench panel ----
+  // The task sits right above the editor so the goal is in view while typing
+  // (SHIG 30, 32, 12); the result banner comes right after the buttons (66).
   const work = el("div", { class: "panel lesson__work" });
-  work.append(editor.root, errorBar, actions, shortcut, notice, banner, hints);
+  work.append(task, editor.root, errorBar, actions, notice, banner, hints, shortcut);
 
   // ---- right: live preview ----
   const viz = el("div", { class: "viz" });
@@ -173,17 +186,30 @@ export function createApp(callbacks: AppCallbacks): AppController {
     banner.textContent = "";
     if (pass) {
       banner.append(el("div", { text: "✓ クリア！ よくできました。" }));
+      bannerNext.textContent = current && nextLesson(current.id) ? "次のレッスン →" : "レッスン一覧へ";
+      banner.append(bannerNext);
     } else {
       banner.append(el("div", { text: "もう少し！ 次を確認しましょう:" }));
       const ul = el("ul");
       for (const f of failures) ul.append(el("li", { text: f }));
       banner.append(ul);
     }
+    // The result may render below the fold; bring it into view (SHIG 66, 65).
+    banner.scrollIntoView({ block: "nearest", behavior: callbacks.reducedMotion ? "auto" : "smooth" });
   }
 
   function setError(message: string): void {
-    errorBar.textContent = message;
-    errorBar.classList.toggle("is-show", message !== "");
+    // "ERROR: 0:7: …" → "7行目: …" (SHIG 55, 11).
+    const lines = describeCompileLog(message);
+    errorBar.textContent = lines.join("\n");
+    errorBar.classList.toggle("is-show", lines.length > 0);
+  }
+
+  /** Say that a (possibly slow) sandbox check is running (SHIG 65, 25). */
+  function setChecking(on: boolean): void {
+    checkBtn.disabled = on;
+    checkBtn.textContent = on ? "チェック中…" : "チェック";
+    checkBtn.setAttribute("aria-busy", on ? "true" : "false");
   }
 
   const liveUpdate = debounce(() => {
@@ -199,7 +225,8 @@ export function createApp(callbacks: AppCallbacks): AppController {
   }, 200);
 
   async function check(): Promise<void> {
-    if (!current) return;
+    // Cmd/Ctrl+Enter bypasses the disabled button; one sandbox run at a time.
+    if (!current || checkBtn.disabled) return;
     const lesson = current;
     const code = editor.getValue();
     let failures: readonly string[];
@@ -207,16 +234,22 @@ export function createApp(callbacks: AppCallbacks): AppController {
       const { grader } = ensureShader();
       failures = evaluate(lesson.challenge.validators, grader.grade(code)).failures;
     } else {
-      const snap = await ensureScene().run(code);
-      setError(snap.error ?? "");
-      failures = evaluate(lesson.challenge.validators, snap).failures;
+      setChecking(true);
+      try {
+        const snap = await ensureScene().run(code);
+        setError(snap.error ?? "");
+        failures = evaluate(lesson.challenge.validators, snap).failures;
+      } finally {
+        setChecking(false);
+      }
+      // The lesson changed while the sandbox was busy; its result is stale.
+      if (current !== lesson) return;
     }
     const passed = failures.length === 0;
     showBanner(passed, failures);
     if (passed) {
       markComplete(store, lesson.id);
       callbacks.onComplete(lesson.id);
-      nextBtn.classList.add("btn--primary");
     }
   }
 
@@ -288,7 +321,7 @@ export function createApp(callbacks: AppCallbacks): AppController {
   solBtn.addEventListener("click", () => {
     if (current) replaceCode(current.challenge.solution, "解答のコードを表示しました。");
   });
-  nextBtn.addEventListener("click", () => {
+  bannerNext.addEventListener("click", () => {
     const n = current ? nextLesson(current.id) : undefined;
     if (n) callbacks.onOpen(n.id);
     else callbacks.onBack();
@@ -304,9 +337,13 @@ export function createApp(callbacks: AppCallbacks): AppController {
     hintsShown = 0;
     updateHintButton();
     hideNotice();
-    nextBtn.classList.remove("btn--primary");
-    // On the last lesson the button returns to the list; say so (SHIG 37).
-    nextBtn.textContent = nextLesson(lessonId) ? "次のレッスン →" : "レッスン一覧へ";
+    setChecking(false);
+    const prev = prevLesson(lessonId);
+    const next = nextLesson(lessonId);
+    prevLink.hidden = !prev;
+    nextLink.hidden = !next;
+    if (prev) prevLink.setAttribute("href", `#${prev.id}`);
+    if (next) nextLink.setAttribute("href", `#${next.id}`);
     const track = trackOf(lessonId);
     position.textContent = track
       ? `${track.title} · ${track.lessons.findIndex((l) => l.id === lessonId) + 1} / ${track.lessons.length}`

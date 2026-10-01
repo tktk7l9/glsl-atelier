@@ -144,6 +144,12 @@ a:focus-visible {
 .crumb b {
   color: var(--ink);
 }
+.topbar-back {
+  display: none;
+  padding: 8px 0;
+  font-size: 0.9rem;
+  text-decoration: none;
+}
 
 main {
   flex: 1;
@@ -372,8 +378,29 @@ main {
 .back-link:hover {
   text-decoration: underline;
 }
+.lesson__nav-right {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+}
 .lesson__position {
   color: var(--ink-faint);
+}
+.lesson__steps {
+  display: inline-flex;
+  gap: 12px;
+}
+.step-link {
+  display: inline-block;
+  padding: 6px 0;
+  text-decoration: none;
+}
+.step-link:hover {
+  text-decoration: underline;
+}
+.step-link[hidden] {
+  display: none;
 }
 .panel {
   background: var(--panel);
@@ -406,7 +433,7 @@ main {
   color: var(--ink);
 }
 .task {
-  margin: 14px 0;
+  margin: 0 0 12px;
   padding: 12px 14px;
   border-radius: var(--radius-sm);
   background: rgba(160, 123, 255, 0.12);
@@ -624,7 +651,8 @@ main {
 /* ---- banner / hints ---- */
 .banner {
   display: none;
-  margin-top: 14px;
+  margin-top: 12px;
+  scroll-margin: 12px;
   padding: 12px 14px;
   border-radius: var(--radius-sm);
   line-height: 1.6;
@@ -646,6 +674,9 @@ main {
 .banner ul {
   margin: 6px 0 0;
   padding-left: 20px;
+}
+.banner .btn {
+  margin-top: 10px;
 }
 .hints {
   margin-top: 10px;
@@ -734,8 +765,17 @@ main {
       "work";
     gap: 14px;
   }
+  /* A square preview filled the phone screen and pushed the editor out of
+     view. Keep it short and pinned under the top bar so typing, checking and
+     hints all happen with the result in sight (SHIG 30, 66). */
   .viz {
-    position: static;
+    position: sticky;
+    /* The bar's height changes with width and pointer; main.ts measures it. */
+    top: var(--topbar-h, 50px);
+    z-index: 10;
+  }
+  .viz__body {
+    aspect-ratio: 16 / 9;
   }
 }
 
@@ -747,10 +787,44 @@ main {
     display: none;
   }
   .topbar {
-    padding: 12px 16px;
+    padding: 8px 16px;
+    min-height: 48px;
+  }
+  .topbar-back.is-show {
+    display: inline-flex;
   }
   main {
     padding: 20px 16px 40px;
+  }
+}
+
+/* Touch: 7mm targets (SHIG 78) and no iOS focus zoom on the editor (92). */
+@media (pointer: coarse) {
+  .btn,
+  .lesson-row,
+  .back-link,
+  .step-link,
+  .topbar-back {
+    min-height: 44px;
+  }
+  /* .topbar-back is left out on purpose: its display belongs to the
+     .is-show / 640px rule, or it would show on the catalogue and on tablets. */
+  .back-link,
+  .step-link {
+    display: inline-flex;
+    align-items: center;
+  }
+  .topbar-back {
+    align-items: center;
+  }
+  .btn,
+  .lesson-row {
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+  .editor-stack > pre,
+  .editor-stack > textarea {
+    font-size: 16px;
   }
 }
 

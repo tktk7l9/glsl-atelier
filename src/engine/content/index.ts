@@ -25,3 +25,10 @@ export function nextLesson(id: string): Lesson | undefined {
   const idx = LESSONS.findIndex((l) => l.id === id);
   return idx >= 0 ? LESSONS[idx + 1] : undefined;
 }
+
+/** The lesson before `id` in catalogue order, or undefined at the start
+ *  (the lesson nav's "← 前のレッスン", SHIG 81). */
+export function prevLesson(id: string): Lesson | undefined {
+  const idx = LESSONS.findIndex((l) => l.id === id);
+  return idx > 0 ? LESSONS[idx - 1] : undefined;
+}

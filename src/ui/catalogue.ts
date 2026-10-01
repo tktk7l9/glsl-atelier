@@ -35,7 +35,8 @@ function trackCard(
 
   const card = el("div", { class: "track-card" });
   const head = el("div", { class: "track-card__head" });
-  head.append(el("span", { class: "track-card__icon", text: track.icon }));
+  // The emoji is decoration; the title carries the meaning (SHIG 70, 96).
+  head.append(el("span", { class: "track-card__icon", text: track.icon, attrs: { "aria-hidden": "true" } }));
   head.append(el("span", { class: "track-card__title", text: track.title }));
   card.append(head);
   card.append(el("div", { class: "track-card__summary", text: track.summary }));
@@ -59,7 +60,8 @@ function trackCard(
   card.append(list);
 
   const meta = el("div", { class: "track-card__meta" });
-  const bar = el("div", { class: "track-card__bar" });
+  // The bar repeats the "done/total" text next to it, so hide it from AT (SHIG 70).
+  const bar = el("div", { class: "track-card__bar", attrs: { "aria-hidden": "true" } });
   const fillEl = el("i");
   fillEl.style.width = `${Math.round(prog.ratio * 100)}%`;
   bar.append(fillEl);

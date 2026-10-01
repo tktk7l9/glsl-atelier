@@ -3,7 +3,7 @@
 // dynamically imported so the cold load stays light.
 
 import "./styles.css";
-import { byId, el } from "./ui/dom.js";
+import { byId, el, isPlainClick } from "./ui/dom.js";
 import { renderCatalogue } from "./ui/catalogue.js";
 import { lessonById, trackOf } from "./engine/content/index.js";
 import type { ProgressStore } from "./engine/progress.js";
@@ -44,7 +44,9 @@ const appRoot = byId("app");
 const bg = el("canvas", { class: "bg", attrs: { id: "bg", "aria-hidden": "true" } }) as HTMLCanvasElement;
 
 const topbar = el("header", { class: "topbar" });
-const brand = el("button", { class: "brand", attrs: { type: "button" } });
+// The brand navigates to the catalogue, so it is a link, not a button: assistive
+// tech announces "link" and the destination is a plain URL (SHIG 11, 60).
+const brand = el("a", { class: "brand", attrs: { href: "#", "aria-label": "GLSL Atelier レッスン一覧へ" } });
 brand.append(el("span", { class: "brand__glyph", attrs: { "aria-hidden": "true" } }));
 brand.append(el("span", { class: "brand__name", text: "GLSL Atelier" }));
 brand.append(el("small", { text: "手を動かして学ぶ WebGL / Three.js" }));
@@ -136,7 +138,12 @@ async function route(): Promise<void> {
   else showCatalogue();
 }
 
-brand.addEventListener("click", () => navigateTo(null));
+brand.addEventListener("click", (e) => {
+  // Cmd/Ctrl/middle clicks keep link behaviour (open the catalogue in a new tab).
+  if (!isPlainClick(e)) return;
+  e.preventDefault();
+  navigateTo(null);
+});
 window.addEventListener("hashchange", () => void route());
 void route();
 

@@ -77,6 +77,19 @@ a {
   color: var(--cyan);
 }
 
+/* One visible focus ring for every control, whatever its own colours
+   (WCAG 2.4.7; SHIG 33). */
+a:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
+/* Round the ring on bare text links only; buttons keep their own radius so
+   their corners do not jump when focused. */
+a:focus-visible {
+  border-radius: 4px;
+}
+
 /* ---- topbar ---- */
 .topbar {
   position: sticky;
@@ -97,12 +110,11 @@ a {
   display: flex;
   align-items: baseline;
   gap: 10px;
-  background: none;
-  border: 0;
-  cursor: pointer;
   color: inherit;
   font: inherit;
-  padding: 0;
+  text-decoration: none;
+  /* Keep the tap target at least 24px tall (WCAG 2.5.8; SHIG 78). */
+  padding: 4px 0;
 }
 .brand__glyph {
   width: 18px;
@@ -371,9 +383,10 @@ main {
   backdrop-filter: blur(6px);
   padding: 20px;
 }
-.lesson__doc h2 {
+.lesson__title {
   margin: 0 0 10px;
   font-size: 1.4rem;
+  /* Focused programmatically on open (not a tab stop), so no ring. */
   outline: none;
 }
 .explain {
@@ -413,7 +426,9 @@ main {
 }
 .mdn-link {
   display: inline-block;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
+  /* ≥24px tall target (WCAG 2.5.8; SHIG 78). */
+  padding: 4px 0;
   font-size: 0.84rem;
 }
 .mdn-link.hidden,
@@ -471,6 +486,12 @@ main {
   background: transparent;
   caret-color: var(--cyan);
   outline: none;
+}
+/* The textarea's own outline is off (it sits over the highlight layer), so
+   show focus on the frame instead (WCAG 2.4.7; SHIG 33). */
+.editor-stack:focus-within {
+  border-color: var(--cyan);
+  box-shadow: 0 0 0 2px rgba(90, 209, 255, 0.35);
 }
 .editor-stack > textarea::selection {
   background: rgba(90, 209, 255, 0.28);
@@ -693,6 +714,11 @@ main {
   color: var(--ink-faint);
   font-size: 0.8rem;
   border-top: 1px solid var(--line);
+}
+.foot a {
+  display: inline-block;
+  /* ≥24px tall target (WCAG 2.5.8; SHIG 78). */
+  padding: 5px 2px;
 }
 
 /* ---- responsive ---- */

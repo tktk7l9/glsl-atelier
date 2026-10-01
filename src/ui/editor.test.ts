@@ -13,7 +13,7 @@ beforeEach(() => {
   document.body.innerHTML = "";
   editor = createEditor("editor");
   document.body.append(editor.root);
-  textarea = getByLabelText<HTMLTextAreaElement>(editor.root, "editor エディタ");
+  textarea = getByLabelText<HTMLTextAreaElement>(editor.root, "editor");
   pre = editor.root.querySelector("pre") as HTMLPreElement;
   user = userEvent.setup();
 });
@@ -27,7 +27,9 @@ const classesOf = (): string[] =>
 
 describe("createEditor", () => {
   it("shows the label and a textarea that does not autocorrect", () => {
-    expect(getByText(editor.root, "editor")).toBeTruthy();
+    const label = getByText(editor.root, "editor");
+    // The visible label is the textarea's accessible name (SHIG 11).
+    expect(textarea.getAttribute("aria-labelledby")).toBe(label.id);
     expect(textarea.getAttribute("spellcheck")).toBe("false");
     expect(textarea.getAttribute("autocomplete")).toBe("off");
     expect(pre.getAttribute("aria-hidden")).toBe("true");
@@ -45,11 +47,24 @@ describe("createEditor", () => {
   it("switches the label and tokenizer when the language changes", () => {
     editor.setValue("const x = 1; // note");
     editor.setLang("js");
-    expect(getByText(editor.root, "scene code (JavaScript)")).toBeTruthy();
+    expect(getByText(editor.root, "コードエディタ (Three.js / JavaScript)")).toBeTruthy();
     expect(classesOf()).toContain("tok-kw");
     expect(classesOf()).toContain("tok-comment");
     editor.setLang("glsl");
-    expect(getByText(editor.root, "fragment shader (GLSL)")).toBeTruthy();
+    expect(getByText(editor.root, "コードエディタ (GLSL フラグメントシェーダー)")).toBeTruthy();
+    // The accessible name follows the visible label.
+    expect(getByLabelText(editor.root, "コードエディタ (GLSL フラグメントシェーダー)")).toBe(textarea);
+  });
+
+  it("points the textarea at its keyboard help via setDescribedBy", () => {
+    editor.setDescribedBy("editor-keys");
+    expect(textarea.getAttribute("aria-describedby")).toBe("editor-keys");
+  });
+
+  it("gives every editor its own label id", () => {
+    const other = createEditor("other");
+    const otherLabel = other.root.querySelector(".editor-label") as HTMLElement;
+    expect(otherLabel.id).not.toBe(textarea.getAttribute("aria-labelledby"));
   });
 
   it("re-highlights and notifies the listener on every input", async () => {

@@ -89,7 +89,7 @@ let callbacks: { [K in keyof AppCallbacks]: AppCallbacks[K] extends boolean ? bo
 let app: AppController;
 let user: UserEvent;
 
-const $editor = (): HTMLTextAreaElement => getByLabelText<HTMLTextAreaElement>(app.root, "editor エディタ");
+const $editor = (): HTMLTextAreaElement => getByLabelText<HTMLTextAreaElement>(app.root, /^コードエディタ/);
 const $errorBar = (): HTMLElement => app.root.querySelector(".error-bar") as HTMLElement;
 const $banner = (): HTMLElement => app.root.querySelector(".banner") as HTMLElement;
 const $notice = (): HTMLElement => app.root.querySelector(".notice") as HTMLElement;
@@ -128,9 +128,12 @@ afterEach(() => {
 describe("opening a GLSL lesson", () => {
   it("shows the lesson text, position, MDN link and the starter code", async () => {
     await app.open(SOLID.id);
-    expect(getByRole(app.root, "heading", { level: 2 }).textContent).toBe(SOLID.title);
+    // The lesson title is the page's h1 (SHIG 59).
+    expect(getByRole(app.root, "heading", { level: 1 }).textContent).toBe(SOLID.title);
     expect(getByText(app.root, "はじめてのシェーダー · 1 / 3")).toBeTruthy();
-    expect(getByRole(app.root, "link", { name: "← レッスン一覧" }).getAttribute("href")).toBe("#");
+    // The way back sits in a named nav landmark (SHIG 59, 60).
+    const lessonNav = getByRole(app.root, "navigation", { name: "レッスンの移動" });
+    expect(getByRole(lessonNav, "link", { name: "← レッスン一覧" }).getAttribute("href")).toBe("#");
     expect(app.root.querySelector(".explain")?.textContent).toContain("gl_FragColor");
     expect(getByText(app.root, "課題")).toBeTruthy();
     expect(app.root.querySelector(".task")?.textContent).toContain(SOLID.challenge.task);
@@ -138,12 +141,14 @@ describe("opening a GLSL lesson", () => {
     expect(mdn.getAttribute("href")).toBe(`https://developer.mozilla.org${SOLID.mdnPath}`);
     expect(mdn.classList.contains("hidden")).toBe(false);
     expect(getByText(app.root, "GLSL")).toBeTruthy();
-    expect(getByText(app.root, "fragment shader (GLSL)")).toBeTruthy();
+    expect(getByText(app.root, "コードエディタ (GLSL フラグメントシェーダー)")).toBeTruthy();
     expect($editor().value).toBe(SOLID.challenge.starterCode);
     expect($btn("ヒント（残り2）").disabled).toBe(false);
     expect($btn("次のレッスン →")).toBeTruthy();
-    expect(getByText(app.root, "⌘/Ctrl + Enter でもチェックできます")).toBeTruthy();
-    expect(document.activeElement).toBe(getByRole(app.root, "heading", { level: 2 }));
+    const keys = getByText(app.root, "⌘/Ctrl + Enter でチェック · Tab でインデント · Esc でエディタから抜ける");
+    // The editor points at its keyboard help (WCAG 2.1.2).
+    expect($editor().getAttribute("aria-describedby")).toBe(keys.id);
+    expect(document.activeElement).toBe(getByRole(app.root, "heading", { level: 1 }));
   });
 
   it("shows the shader canvas and hides the 3D frame", async () => {
@@ -170,7 +175,7 @@ describe("opening a GLSL lesson", () => {
 
   it("ignores an unknown lesson id", async () => {
     await app.open("nope");
-    expect(getByRole(app.root, "heading", { level: 2 }).textContent).toBe("");
+    expect(getByRole(app.root, "heading", { level: 1 }).textContent).toBe("");
     expect(preview.setSource).not.toHaveBeenCalled();
   });
 });
@@ -258,10 +263,14 @@ describe("hints", () => {
   it("reveals hints one at a time and says when they run out", async () => {
     await app.open(SOLID.id);
     await user.click($btn("ヒント（残り2）"));
-    expect(getByText(app.root, `💡 ${SOLID.challenge.hints[0]}`)).toBeTruthy();
-    expect(queryByText(app.root, `💡 ${SOLID.challenge.hints[1]}`)).toBeNull();
+    const first = getByText(app.root, SOLID.challenge.hints[0]);
+    // The bulb is decoration; hints are announced politely (SHIG 25, 96).
+    expect(first.textContent).toBe(`💡 ${SOLID.challenge.hints[0]}`);
+    expect(first.querySelector("span")?.getAttribute("aria-hidden")).toBe("true");
+    expect(app.root.querySelector(".hints")?.getAttribute("aria-live")).toBe("polite");
+    expect(queryByText(app.root, SOLID.challenge.hints[1])).toBeNull();
     await user.click($btn("ヒント（残り1）"));
-    expect(getByText(app.root, `💡 ${SOLID.challenge.hints[1]}`)).toBeTruthy();
+    expect(getByText(app.root, SOLID.challenge.hints[1])).toBeTruthy();
     const done = $btn("ヒントはここまで");
     expect(done.disabled).toBe(true);
     expect(app.root.querySelectorAll(".hint")).toHaveLength(2);
@@ -426,7 +435,7 @@ describe("opening a Three.js lesson", () => {
   it("switches to the sandbox frame and JS editor", async () => {
     await app.open(MESH.id);
     expect(getByText(app.root, "Three.js")).toBeTruthy();
-    expect(getByText(app.root, "scene code (JavaScript)")).toBeTruthy();
+    expect(getByText(app.root, "コードエディタ (Three.js / JavaScript)")).toBeTruthy();
     expect(getByText(app.root, "シーンの基本 · 1 / 3")).toBeTruthy();
     const frame = app.root.querySelector<HTMLIFrameElement>(".preview-frame")!;
     expect(frame.classList.contains("hidden")).toBe(false);

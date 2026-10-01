@@ -62,6 +62,12 @@ describe("production bootstrap", () => {
     expect(backgroundCalls[0]).toEqual([document.querySelector("canvas#bg"), false]);
   });
 
+  it("leaves the bar height to the stylesheet where ResizeObserver is missing", () => {
+    expect(typeof ResizeObserver).toBe("undefined");
+    expect(document.documentElement.style.getPropertyValue("--topbar-h")).toBe("");
+    expect(document.querySelector("header .topbar-back")?.classList.contains("is-show")).toBe(false);
+  });
+
   it("still renders the catalogue when storage throws", () => {
     expect(document.querySelector("main h1")?.textContent).toBe("GLSL Atelier");
     expect(document.querySelector("main .resume__status")?.textContent).toMatch(/クリアしたレッスン 0 \//);

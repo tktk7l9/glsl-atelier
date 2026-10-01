@@ -51,12 +51,25 @@ const SECOND = LESSONS[1];
 
 const main = (): HTMLElement => document.querySelector("main") as HTMLElement;
 const crumb = (): HTMLElement => document.querySelector(".crumb") as HTMLElement;
+// The stylesheet (display: none outside phone widths) keeps it out of the
+// accessibility tree here, so it cannot be queried by role.
+const topbarBack = (): HTMLElement => document.querySelector("header .topbar-back") as HTMLElement;
+
+// jsdom has no layout and no ResizeObserver; record what main.ts observes.
+const observed: { target: Element; notify: () => void }[] = [];
+class FakeResizeObserver {
+  constructor(private readonly cb: () => void) {}
+  observe(target: Element): void {
+    observed.push({ target, notify: this.cb });
+  }
+}
 
 beforeAll(async () => {
   document.body.innerHTML = '<div id="app"></div>';
   document.title = BASE_TITLE;
   window.scrollTo = scrollTo as unknown as typeof window.scrollTo;
   window.matchMedia = matchMedia;
+  vi.stubGlobal("ResizeObserver", FakeResizeObserver);
   localStorage.setItem("glsl-atelier:progress:v1", JSON.stringify([FIRST.id]));
   await import("./main.js");
 });
@@ -74,6 +87,19 @@ describe("shell", () => {
     expect(getByRole(main(), "heading", { level: 1 }).textContent).toBe("GLSL Atelier");
     expect(document.title).toBe(BASE_TITLE);
     expect(crumb().textContent).toBe("");
+    // The phone back link is in the bar but only shown while a lesson is open (SHIG 60, 82).
+    expect(topbarBack().tagName).toBe("A");
+    expect(topbarBack().textContent).toBe("レッスン一覧");
+    expect(topbarBack().getAttribute("href")).toBe("#");
+    expect(topbarBack().classList.contains("is-show")).toBe(false);
+  });
+
+  it("publishes the sticky bar's height for the pinned preview", () => {
+    const header = document.querySelector("header.topbar") as HTMLElement;
+    expect(observed.map((o) => o.target)).toEqual([header]);
+    Object.defineProperty(header, "offsetHeight", { value: 61, configurable: true });
+    observed[0].notify();
+    expect(document.documentElement.style.getPropertyValue("--topbar-h")).toBe("61px");
   });
 
   it("reads saved progress into the catalogue", () => {
@@ -106,6 +132,7 @@ describe("routing", () => {
     expect(crumb().querySelector("b")?.textContent).toBe(SECOND.title);
     expect(document.title).toBe(`${SECOND.title} — GLSL Atelier`);
     expect(scrollTo).toHaveBeenLastCalledWith(0, 0);
+    expect(topbarBack().classList.contains("is-show")).toBe(true);
   });
 
   it("returns to the catalogue on the brand link, restoring scroll and focus", async () => {
@@ -118,6 +145,7 @@ describe("routing", () => {
     expect(scrollTo).toHaveBeenCalledWith(0, 320);
     const row = getByRole(main(), "button", { name: `${SECOND.title}（未クリア）` });
     expect(document.activeElement).toBe(row);
+    expect(topbarBack().classList.contains("is-show")).toBe(false);
   });
 
   it("reuses the same lesson controller for the next lesson", async () => {
@@ -125,6 +153,16 @@ describe("routing", () => {
     await waitFor(() => expect(controller.open).toHaveBeenLastCalledWith(LESSONS[2].id));
     expect(appsCreated).toBe(1);
     expect(document.title).toBe(`${LESSONS[2].title} — GLSL Atelier`);
+  });
+
+  it("returns to the catalogue from the sticky bar's back link", async () => {
+    expect(topbarBack().classList.contains("is-show")).toBe(true);
+    await userEvent.click(topbarBack());
+    await waitFor(() => expect(main().querySelector("h1")).not.toBeNull());
+    expect(topbarBack().classList.contains("is-show")).toBe(false);
+    expect(document.title).toBe(BASE_TITLE);
+    callbacks!.onOpen(LESSONS[2].id);
+    await waitFor(() => expect(topbarBack().classList.contains("is-show")).toBe(true));
   });
 
   it("goes back to the catalogue through the controller's onBack", async () => {

@@ -5,7 +5,7 @@
 // validators, drafts, progress and DOM wiring are all exercised.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getByLabelText, getByRole, getByText, queryByText } from "@testing-library/dom";
+import { getByLabelText, getByRole, getByText, queryByRole, queryByText } from "@testing-library/dom";
 import userEvent, { type UserEvent } from "@testing-library/user-event";
 import { LESSONS, lessonById } from "./engine/content/index.js";
 import type { SceneSnapshot, ShaderSnapshot } from "./engine/validate/snapshot.js";
@@ -94,6 +94,10 @@ const $errorBar = (): HTMLElement => app.root.querySelector(".error-bar") as HTM
 const $banner = (): HTMLElement => app.root.querySelector(".banner") as HTMLElement;
 const $notice = (): HTMLElement => app.root.querySelector(".notice") as HTMLElement;
 const $btn = (name: string | RegExp): HTMLButtonElement => getByRole(app.root, "button", { name });
+const $nav = (): HTMLElement => getByRole(app.root, "navigation", { name: "レッスンの移動" });
+const $step = (name: string): HTMLElement | null => queryByRole($nav(), "link", { name });
+// jsdom has no layout, so it does not implement scrollIntoView.
+const scrollIntoView = vi.fn<(arg?: boolean | ScrollIntoViewOptions) => void>();
 const progress = (): string[] => JSON.parse(localStorage.getItem(PROGRESS_KEY) ?? "[]") as string[];
 const drafts = (): Record<string, string> =>
   JSON.parse(localStorage.getItem(DRAFTS_KEY) ?? "{}") as Record<string, string>;
@@ -106,6 +110,8 @@ beforeEach(() => {
   vi.useFakeTimers();
   localStorage.clear();
   document.body.innerHTML = "";
+  scrollIntoView.mockReset();
+  Element.prototype.scrollIntoView = scrollIntoView;
   preview.setSource.mockReset().mockImplementation((s) => fakeShaderSnapshot(s).log);
   preview.resize.mockReset();
   preview.dispose.mockReset();
@@ -144,11 +150,44 @@ describe("opening a GLSL lesson", () => {
     expect(getByText(app.root, "コードエディタ (GLSL フラグメントシェーダー)")).toBeTruthy();
     expect($editor().value).toBe(SOLID.challenge.starterCode);
     expect($btn("ヒント（残り2）").disabled).toBe(false);
-    expect($btn("次のレッスン →")).toBeTruthy();
+    // Forward is a plain hash link in the nav; the first lesson has no way back (SHIG 81, 59).
+    expect($step("次のレッスン →")?.getAttribute("href")).toBe(`#${LESSONS[1].id}`);
+    expect($step("← 前のレッスン")).toBeNull();
+    // ...and it is not a button competing with the editing actions (SHIG 73, 47).
+    expect(queryByRole(app.root, "button", { name: "次のレッスン →" })).toBeNull();
     const keys = getByText(app.root, "⌘/Ctrl + Enter でチェック · Tab でインデント · Esc でエディタから抜ける");
     // The editor points at its keyboard help (WCAG 2.1.2).
     expect($editor().getAttribute("aria-describedby")).toBe(keys.id);
     expect(document.activeElement).toBe(getByRole(app.root, "heading", { level: 1 }));
+  });
+
+  it("keeps the task right above the editor and the result right under the buttons", async () => {
+    await app.open(SOLID.id);
+    // SHIG 30, 32, 12 (goal in view while typing) and 66 (result next to its trigger).
+    const order = Array.from(app.root.querySelector(".lesson__work")!.children).map((c) => c.className);
+    expect(order.slice(0, 2)).toEqual(["task", "editor-wrap"]);
+    expect(order.indexOf("banner")).toBe(order.indexOf("actions") + 2);
+    expect(order[order.indexOf("actions") + 1]).toBe("notice");
+    expect(app.root.querySelector(".lesson__doc .task")).toBeNull();
+  });
+
+  it("links both ways from a lesson in the middle", async () => {
+    await app.open(LESSONS[1].id);
+    expect($step("← 前のレッスン")?.getAttribute("href")).toBe(`#${LESSONS[0].id}`);
+    expect($step("次のレッスン →")?.getAttribute("href")).toBe(`#${LESSONS[2].id}`);
+    // Left = back, right = forward (SHIG 81).
+    const links = Array.from($nav().querySelectorAll(".step-link")).map((a) => a.textContent);
+    expect(links).toEqual(["← 前のレッスン", "次のレッスン →"]);
+  });
+
+  it("offers only the way back on the last lesson", async () => {
+    await app.open(LAST.id);
+    expect($step("次のレッスン →")).toBeNull();
+    expect($step("← 前のレッスン")?.getAttribute("href")).toBe(`#${LESSONS[LESSONS.length - 2].id}`);
+    // Reopening an earlier lesson brings the forward link back.
+    await app.open(SOLID.id);
+    expect($step("次のレッスン →")).not.toBeNull();
+    expect($step("← 前のレッスン")).toBeNull();
   });
 
   it("shows the shader canvas and hides the 3D frame", async () => {
@@ -191,9 +230,28 @@ describe("live preview", () => {
     await settle();
     expect(preview.setSource).toHaveBeenCalledTimes(1);
     expect(preview.setSource).toHaveBeenCalledWith("broken");
-    expect($errorBar().textContent).toBe("ERROR: 0:1: 'main' : function not found");
+    // "ERROR: 0:1: …" reads as a line number (SHIG 55, 11).
+    expect($errorBar().textContent).toBe("1行目: 'main' : function not found");
     expect($errorBar().classList.contains("is-show")).toBe(true);
     expect($errorBar().getAttribute("role")).toBe("status");
+  });
+
+  it("puts one message per line and drops duplicates", async () => {
+    preview.setSource.mockReturnValue(
+      "ERROR: 0:3: 'x' : undeclared identifier\nERROR: 0:3: 'x' : undeclared identifier\nWARNING: 0:9: unused\n\u0000",
+    );
+    await app.open(SOLID.id);
+    await settle();
+    expect($errorBar().textContent).toBe("3行目: 'x' : undeclared identifier\n9行目: unused");
+  });
+
+  it("keeps the error bar closed when the log is only the driver's trailing NUL", async () => {
+    preview.setSource.mockReturnValue("\u0000");
+    await app.open(SOLID.id);
+    await settle();
+    expect(preview.setSource).toHaveBeenCalled();
+    expect($errorBar().textContent).toBe("");
+    expect($errorBar().classList.contains("is-show")).toBe(false);
   });
 
   it("clears the error once the shader compiles again", async () => {
@@ -221,7 +279,13 @@ describe("checking a GLSL lesson", () => {
     expect($banner().classList.contains("banner--fail")).toBe(true);
     expect(callbacks.onComplete).not.toHaveBeenCalled();
     expect(progress()).toEqual([]);
-    expect($btn("次のレッスン →").classList.contains("btn--primary")).toBe(false);
+    // No call to action until the lesson is cleared (SHIG 47).
+    expect(queryByRole(app.root, "button", { name: "次のレッスン →" })).toBeNull();
+    expect(app.root.querySelectorAll(".btn--primary")).toHaveLength(1);
+    // The result is brought into view (SHIG 66, 65).
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    expect(scrollIntoView.mock.contexts[0]).toBe($banner());
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest", behavior: "smooth" });
   });
 
   it("celebrates, records progress and promotes the next button when the check passes", async () => {
@@ -232,7 +296,31 @@ describe("checking a GLSL lesson", () => {
     expect($banner().classList.contains("banner--pass")).toBe(true);
     expect(callbacks.onComplete).toHaveBeenCalledWith(SOLID.id);
     expect(progress()).toEqual([SOLID.id]);
-    expect($btn("次のレッスン →").classList.contains("btn--primary")).toBe(true);
+    // The banner carries the single call to action after a pass (SHIG 47, 61, 41).
+    const next = getByRole($banner(), "button", { name: "次のレッスン →" });
+    expect(next.classList.contains("btn--primary")).toBe(true);
+    expect(scrollIntoView.mock.contexts[0]).toBe($banner());
+  });
+
+  it("scrolls to the result without animation when reduced motion is on", async () => {
+    app.dispose();
+    app.root.remove();
+    callbacks.reducedMotion = true;
+    app = createApp(callbacks as unknown as AppCallbacks);
+    document.body.append(app.root);
+    await app.open(SOLID.id);
+    await user.click($btn("チェック"));
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest", behavior: "auto" });
+  });
+
+  it("drops the call to action again when a later check fails", async () => {
+    await app.open(SOLID.id);
+    await user.click($btn("解答を見る"));
+    await user.click($btn("チェック"));
+    await user.click($btn("リセット"));
+    await user.click($btn("チェック"));
+    expect($banner().classList.contains("banner--fail")).toBe(true);
+    expect(queryByRole(app.root, "button", { name: "次のレッスン →" })).toBeNull();
   });
 
   it("checks on Cmd+Enter from inside the editor", async () => {
@@ -248,7 +336,7 @@ describe("checking a GLSL lesson", () => {
     await user.keyboard("{Control>}a{/Control}{Backspace}nothing");
     await user.click($btn("チェック"));
     const items = Array.from($banner().querySelectorAll("li")).map((li) => li.textContent);
-    expect(items[0]).toBe("シェーダーをコンパイルできません: ERROR: 0:1: 'main' : function not found");
+    expect(items[0]).toMatch(/^シェーダーをコンパイルできません: .*'main' : function not found$/);
     expect(items).toContain("コードに必要な記述が見つかりません");
   });
 
@@ -256,6 +344,7 @@ describe("checking a GLSL lesson", () => {
     await user.click($btn("チェック"));
     expect($banner().textContent).toBe("");
     expect(grader.grade).not.toHaveBeenCalled();
+    expect(scrollIntoView).not.toHaveBeenCalled();
   });
 });
 
@@ -411,8 +500,15 @@ describe("storage switched off", () => {
 });
 
 describe("next lesson", () => {
+  /** Clear the open lesson so the banner shows its call to action. */
+  const pass = async (): Promise<void> => {
+    await user.click($btn("解答を見る"));
+    await user.click($btn("チェック"));
+  };
+
   it("opens the following lesson in catalogue order", async () => {
     await app.open(SOLID.id);
+    await pass();
     await user.click($btn("次のレッスン →"));
     expect(callbacks.onOpen).toHaveBeenCalledWith(LESSONS[1].id);
     expect(callbacks.onBack).not.toHaveBeenCalled();
@@ -420,14 +516,19 @@ describe("next lesson", () => {
 
   it("returns to the catalogue from the last lesson and says so", async () => {
     await app.open(LAST.id);
+    await pass();
     await user.click($btn("レッスン一覧へ"));
     expect(callbacks.onBack).toHaveBeenCalled();
     expect(callbacks.onOpen).not.toHaveBeenCalled();
   });
 
-  it("goes back when pressed before any lesson is open", async () => {
-    await user.click($btn("次のレッスン →"));
-    expect(callbacks.onBack).toHaveBeenCalled();
+  it("offers no way forward before any lesson is open", () => {
+    // The call to action only exists inside a pass banner now (SHIG 47), so
+    // there is nothing to press until a lesson has been opened and cleared.
+    expect(queryByRole(app.root, "button", { name: /次のレッスン|レッスン一覧へ/ })).toBeNull();
+    expect($step("次のレッスン →")).toBeNull();
+    expect($step("← 前のレッスン")).toBeNull();
+    expect(callbacks.onBack).not.toHaveBeenCalled();
   });
 });
 
@@ -470,6 +571,50 @@ describe("opening a Three.js lesson", () => {
     expect(getByText($banner(), "✓ クリア！ よくできました。")).toBeTruthy();
     expect(progress()).toEqual([MESH.id]);
     expect(callbacks.onComplete).toHaveBeenCalledWith(MESH.id);
+  });
+
+  it("says the check is running while the sandbox is busy, and allows only one run", async () => {
+    await app.open(MESH.id);
+    await settle();
+    sandbox.run.mockClear();
+    let finish!: (snap: SceneSnapshot) => void;
+    sandbox.run.mockImplementationOnce(() => new Promise<SceneSnapshot>((r) => (finish = r)));
+    const check = $btn("チェック");
+    await user.click(check);
+    // SHIG 65, 25: the wait is visible and announced.
+    expect(check.textContent).toBe("チェック中…");
+    expect(check.disabled).toBe(true);
+    expect(check.getAttribute("aria-busy")).toBe("true");
+    expect($banner().textContent).toBe("");
+    // Cmd/Ctrl+Enter must not start a second run past the disabled button.
+    await user.click($editor());
+    await user.keyboard("{Meta>}{Enter}{/Meta}");
+    expect(sandbox.run).toHaveBeenCalledTimes(1);
+
+    finish(fakeSceneSnapshot(MESH.challenge.starterCode));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(check.textContent).toBe("チェック");
+    expect(check.disabled).toBe(false);
+    expect(check.getAttribute("aria-busy")).toBe("false");
+    expect($banner().classList.contains("banner--fail")).toBe(true);
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+  });
+
+  it("discards a result that arrives after another lesson was opened", async () => {
+    await app.open(MESH.id);
+    await settle();
+    let finish!: (snap: SceneSnapshot) => void;
+    sandbox.run.mockImplementationOnce(() => new Promise<SceneSnapshot>((r) => (finish = r)));
+    await user.click($btn("チェック"));
+    await app.open(SOLID.id);
+    // Opening a lesson never leaves the button stuck on チェック中….
+    expect($btn("チェック").disabled).toBe(false);
+    finish(fakeSceneSnapshot(MESH.challenge.solution));
+    await vi.advanceTimersByTimeAsync(0);
+    expect($banner().textContent).toBe("");
+    expect(scrollIntoView).not.toHaveBeenCalled();
+    expect(progress()).toEqual([]);
+    expect(callbacks.onComplete).not.toHaveBeenCalled();
   });
 
   it("reuses one sandbox across lessons and disposes every runtime once", async () => {

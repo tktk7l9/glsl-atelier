@@ -5,3 +5,8 @@ coverage
 *.local
 .DS_Store
 *.log
+.env
+.env.*
+.dev.vars
+.dev.vars.*
+.wrangler

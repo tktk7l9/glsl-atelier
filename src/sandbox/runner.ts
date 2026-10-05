@@ -121,6 +121,10 @@ interface RunMessage {
 }
 
 window.addEventListener("message", (e: MessageEvent) => {
+  // Only the embedding page may submit code. Our origin is opaque, so the
+  // sender's origin cannot be compared; check the window reference instead, and
+  // refuse to run at all when opened top-level (no embedding parent).
+  if (window.parent === window || e.source !== window.parent) return;
   const data = e.data as RunMessage | undefined;
   if (!data || data.type !== "run") return;
   let snapshot: SceneSnapshot;

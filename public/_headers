@@ -19,9 +19,13 @@
 
 # Opaque-origin sandbox that runs the learner's code. In exchange for allowing
 # inline/eval, connect-src is set to none to cut off external requests.
+# The CSP `sandbox allow-scripts` directive forces the opaque origin even when the
+# page is opened top-level (window.open / direct navigation), where the iframe's
+# sandbox attribute does not apply; without it, a cross-origin opener could post
+# code that would run with this site's origin.
 /sandbox.html
   ! Content-Security-Policy
-  Content-Security-Policy: default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; frame-ancestors 'self'; base-uri 'none'; form-action 'none'
+  Content-Security-Policy: default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; frame-ancestors 'self'; base-uri 'none'; form-action 'none'; sandbox allow-scripts
   ! X-Frame-Options
   X-Frame-Options: SAMEORIGIN
   ! Referrer-Policy
@@ -29,7 +33,7 @@
 
 /sandbox
   ! Content-Security-Policy
-  Content-Security-Policy: default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; frame-ancestors 'self'; base-uri 'none'; form-action 'none'
+  Content-Security-Policy: default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; frame-ancestors 'self'; base-uri 'none'; form-action 'none'; sandbox allow-scripts
   ! X-Frame-Options
   X-Frame-Options: SAMEORIGIN
   ! Referrer-Policy

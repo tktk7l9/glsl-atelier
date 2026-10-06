@@ -41,6 +41,7 @@ src/
     shader-runtime.ts              # WebGL コンパイル＋描画＋読み戻し
     scene-sandbox.ts               # iframe コントローラ（親側）
     runner.ts                      # iframe 内 Three.js ランナー（sandbox.html にインライン）
+    scene-runner.ts                # コード実行・描画・読み戻し・リサイズ後の再描画（Node でもテスト）
     scene-graph.ts                 # シーングラフ → Snapshot（純粋・Node でもテスト）
     sample-grid.ts
   ui/ {dom,editor,catalogue}.ts

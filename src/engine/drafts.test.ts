@@ -52,3 +52,32 @@ describe("drafts", () => {
     expect(loadDraft(store, "a")).toBe("code");
   });
 });
+
+describe("drafts with hostile stored JSON", () => {
+  it("ignores keys that only exist on Object.prototype", () => {
+    const s = memStore("{}");
+    expect(loadDraft(s, "constructor")).toBeUndefined();
+    expect(loadDraft(s, "toString")).toBeUndefined();
+  });
+
+  it("does not let a stored __proto__ key leak into other lessons", () => {
+    const s = memStore('{"__proto__":{"a":"void main(){}"}}');
+    expect(loadDraft(s, "a")).toBeUndefined();
+    expect(loadDraft(s, "__proto__")).toBeUndefined();
+    expect(({} as Record<string, unknown>)["a"]).toBeUndefined();
+  });
+
+  it("drops non-string entries and keeps the valid ones on the next save", () => {
+    const s = memStore('{"a":42,"b":{"x":1},"c":"kept"}');
+    expect(loadDraft(s, "a")).toBeUndefined();
+    expect(loadDraft(s, "b")).toBeUndefined();
+    saveDraft(s, "d", "new", "starter");
+    expect(JSON.parse(s.raw()!)).toEqual({ c: "kept", d: "new" });
+  });
+
+  it("does not forget a prototype key that was never saved", () => {
+    const s = memStore('{"c":"kept"}');
+    saveDraft(s, "constructor", "starter", "starter");
+    expect(s.raw()).toBe('{"c":"kept"}');
+  });
+});

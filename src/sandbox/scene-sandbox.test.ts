@@ -58,6 +58,74 @@ describe("createSceneSandbox", () => {
     await expect(result).resolves.toEqual(snapshot("scene.add(cube)"));
   });
 
+  it("waits for a fresh ready after the iframe is re-mounted with a new window", async () => {
+    fromRunner({ type: "ready" });
+    // Opening another lesson re-mounts the lesson view: the iframe is taken out
+    // and put back, which gives it a new window whose sandbox is still loading.
+    const before = iframe.contentWindow;
+    iframe.remove();
+    document.body.append(iframe);
+    expect(iframe.contentWindow).not.toBe(before);
+    spyOnPost();
+
+    const result = sandbox.run("next lesson");
+    await flush();
+    // Posting now would be lost (and time out as an "infinite loop").
+    expect(posted).toHaveLength(0);
+
+    fromRunner({ type: "ready" });
+    await flush();
+    expect(posted).toEqual([{ type: "run", id: 1, code: "next lesson" }]);
+    fromRunner({ type: "result", id: 1, snapshot: snapshot("next lesson") });
+    await expect(result).resolves.toEqual(snapshot("next lesson"));
+
+    // Once that window is ready, later runs go straight through.
+    const again = sandbox.run("edit");
+    await flush();
+    expect(posted.map((p) => p.code)).toEqual(["next lesson", "edit"]);
+    fromRunner({ type: "result", id: 2, snapshot: snapshot("edit") });
+    await expect(again).resolves.toEqual(snapshot("edit"));
+  });
+
+  it("sends a run again when the iframe is re-mounted before answering it", async () => {
+    vi.useFakeTimers();
+    fromRunner({ type: "ready" });
+    const result = sandbox.run("in flight");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(posted).toHaveLength(1);
+
+    // The view is re-mounted mid-run: the old window will never answer.
+    await vi.advanceTimersByTimeAsync(4000);
+    iframe.remove();
+    document.body.append(iframe);
+    spyOnPost();
+    fromRunner({ type: "ready" });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(posted).toEqual([
+      { type: "run", id: 1, code: "in flight" },
+      { type: "run", id: 1, code: "in flight" },
+    ]);
+
+    // The new window gets a full timeout of its own: no reload 5 s after the
+    // first post, and its answer resolves the run.
+    await vi.advanceTimersByTimeAsync(4000);
+    expect(iframe.getAttribute("src")).toBeNull();
+    fromRunner({ type: "result", id: 1, snapshot: snapshot("in flight") });
+    await expect(result).resolves.toEqual(snapshot("in flight"));
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("does not send a run twice when its own window says ready again", async () => {
+    fromRunner({ type: "ready" });
+    const result = sandbox.run("once");
+    await flush();
+    fromRunner({ type: "ready" });
+    await flush();
+    expect(posted).toEqual([{ type: "run", id: 1, code: "once" }]);
+    fromRunner({ type: "result", id: 1, snapshot: snapshot("once") });
+    await expect(result).resolves.toEqual(snapshot("once"));
+  });
+
   it("ignores messages that do not come from its own iframe", async () => {
     const result = sandbox.run("a");
     fromRunner({ type: "ready" }, null);

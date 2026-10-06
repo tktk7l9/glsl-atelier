@@ -3,6 +3,12 @@
 // in via postMessage, and resolves with the SceneSnapshot the runner posts back.
 // A timeout guards against infinite loops in learner code: the hung iframe is
 // isolated and simply reloaded for the next run.
+//
+// The lesson view is re-mounted on every navigation, and re-inserting the
+// iframe gives it a fresh window whose sandbox is still loading. Readiness
+// therefore belongs to the window that said "ready", and a run that was posted
+// to a window that has since been replaced is sent again to the new one;
+// otherwise it would be lost and time out as an "infinite loop".
 
 import type { SceneSnapshot } from "../engine/validate/snapshot.js";
 
@@ -15,26 +21,59 @@ export interface SceneSandbox {
 
 interface Pending {
   resolve(snap: SceneSnapshot): void;
-  timer: ReturnType<typeof setTimeout>;
+  timer?: ReturnType<typeof setTimeout>;
   code: string;
+  /** The iframe window the run was last posted to. */
+  target: MessageEventSource | null;
 }
 
 export function createSceneSandbox(iframe: HTMLIFrameElement): SceneSandbox {
   let nextId = 1;
   const pending = new Map<number, Pending>();
-  let ready = false;
+  /** The iframe window whose sandbox last said "ready". */
+  let readyWindow: MessageEventSource | null = null;
   let readyResolvers: Array<() => void> = [];
 
   function whenReady(): Promise<void> {
-    if (ready) return Promise.resolve();
+    if (readyWindow !== null && readyWindow === iframe.contentWindow) return Promise.resolve();
     return new Promise((r) => readyResolvers.push(r));
+  }
+
+  function reload(): void {
+    // A reload keeps the same window in a browser, so forget its readiness.
+    readyWindow = null;
+    // Re-pointing src reloads the iframe, which re-posts "ready".
+    iframe.src = "/sandbox.html";
+  }
+
+  /** Post run `id` to the iframe's current window, (re)starting its timeout. */
+  function send(id: number, p: Pending): void {
+    clearTimeout(p.timer);
+    p.timer = setTimeout(() => {
+      pending.delete(id);
+      reload();
+      p.resolve({
+        kind: "scene",
+        error: "実行がタイムアウトしました（無限ループの可能性）",
+        source: p.code,
+        objects: [],
+        camera: null,
+      });
+    }, TIMEOUT_MS);
+    p.target = iframe.contentWindow;
+    iframe.contentWindow?.postMessage({ type: "run", id, code: p.code }, "*");
   }
 
   function onMessage(e: MessageEvent): void {
     if (e.source !== iframe.contentWindow) return;
     const data = e.data as { type?: string; id?: number; snapshot?: SceneSnapshot };
     if (data.type === "ready") {
-      ready = true;
+      readyWindow = e.source;
+      // A run posted to a window that has since been replaced will never be
+      // answered; hand it to the new one.
+      pending.forEach((p, id) => {
+        if (p.target !== e.source) send(id, p);
+      });
       readyResolvers.forEach((r) => r());
       readyResolvers = [];
       return;
@@ -51,29 +90,13 @@ export function createSceneSandbox(iframe: HTMLIFrameElement): SceneSandbox {
 
   window.addEventListener("message", onMessage);
 
-  function reload(): void {
-    ready = false;
-    // Re-pointing src reloads the iframe, which re-posts "ready".
-    iframe.src = "/sandbox.html";
-  }
-
   async function exec(code: string): Promise<SceneSnapshot> {
     await whenReady();
     const id = nextId++;
     return new Promise<SceneSnapshot>((resolve) => {
-      const timer = setTimeout(() => {
-        pending.delete(id);
-        reload();
-        resolve({
-          kind: "scene",
-          error: "実行がタイムアウトしました（無限ループの可能性）",
-          source: code,
-          objects: [],
-          camera: null,
-        });
-      }, TIMEOUT_MS);
-      pending.set(id, { resolve, timer, code });
-      iframe.contentWindow?.postMessage({ type: "run", id, code }, "*");
+      const p: Pending = { resolve, code, target: null };
+      pending.set(id, p);
+      send(id, p);
     });
   }
 

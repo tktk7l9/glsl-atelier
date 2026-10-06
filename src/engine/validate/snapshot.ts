@@ -43,6 +43,8 @@ export interface SceneObject {
   readonly position: Vec3;
   readonly scale: Vec3;
   readonly visible: boolean;
+  /** InstancedMesh.count — the number of copies drawn. Absent for plain objects. */
+  readonly instances?: number;
 }
 
 /** Result of running a learner's Three.js scene code in the sandbox. */

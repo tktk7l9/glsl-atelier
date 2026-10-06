@@ -12,7 +12,26 @@ uniform vec2 u_mouse;
 
 const sh = (body: string): string => `${HEAD}\n${body}\n`;
 
+// The sin-based hash multiplies by 43758.5453, which a real 16-bit mediump
+// float cannot hold (mobile GPUs honour mediump), so the noise lessons ask for
+// highp — supported by every WebGL device in practice and a no-op on desktop.
+const HEAD_HIGHP = HEAD.replace("precision mediump float;", "precision highp float;");
+const shHigh = (body: string): string => `${HEAD_HIGHP}\n${body}\n`;
+
 const FULL: [number, number, number, number] = [0, 0, 1, 1];
+
+/** Aspect-correct centred coordinates: p ∈ [-1, 1] on the short axis. */
+const CENTRED =
+  "  vec2 p = (gl_FragCoord.xy * 2.0 - u_resolution) / min(u_resolution.x, u_resolution.y);\n";
+
+const RANDOM_FN =
+  "// 2D の座標から 0〜1 の「でたらめな値」を作る定番のハッシュ\n" +
+  "float random(vec2 v) {\n" +
+  "  return fract(sin(dot(v, vec2(12.9898, 78.233))) * 43758.5453);\n" +
+  "}\n\n";
+
+const WHITE: [number, number, number] = [1, 1, 1];
+const BLACK: [number, number, number] = [0, 0, 0];
 
 export const glslTracks: readonly Track[] = [
   {
@@ -318,8 +337,9 @@ export const glslTracks: readonly Track[] = [
           task: "u_time と sin を使って、画面全体を明滅させよう。",
           validators: [
             { kind: "compiles" },
-            { kind: "sourceMatches", pattern: "u_time" },
-            { kind: "sourceMatches", pattern: "sin" },
+            // The header declares u_time, so require it inside main().
+            { kind: "sourceMatches", pattern: "main[\\s\\S]*u_time" },
+            { kind: "sourceMatches", pattern: "main[\\s\\S]*sin\\s*\\(" },
           ],
           hints: ["float b = abs(sin(u_time));", "プレビューが点滅すれば成功"],
           solution: sh(
@@ -340,7 +360,8 @@ export const glslTracks: readonly Track[] = [
           task: "縞模様が横に流れるよう、x に u_time を取り入れよう。",
           validators: [
             { kind: "compiles" },
-            { kind: "sourceMatches", pattern: "u_time" },
+            // The header declares u_time, so require it inside main().
+            { kind: "sourceMatches", pattern: "main[\\s\\S]*u_time" },
             { kind: "sourceMatches", pattern: "fract" },
             { kind: "notUniform" },
           ],
@@ -404,13 +425,457 @@ export const glslTracks: readonly Track[] = [
           ),
         },
       },
+      {
+        id: "glsl-repeat-dots",
+        title: "水玉を並べる: fract × 図形",
+        explanation:
+          "<p><code>fract()</code> で分割した各マスの座標は、どのマスでも 0〜1 です。" +
+          "その座標で図形を 1つ描けば、同じ図形が<b>マスの数だけ</b>並びます。" +
+          "「空間を繰り返してから描く」のは、シェーダーで模様を作る基本の型です。</p>",
+        challenge: {
+          starterCode: sh(
+            "void main() {\n  vec2 st = gl_FragCoord.xy / u_resolution;\n  vec2 g = st;\n  float d = distance(g, vec2(0.5));\n  float c = 1.0 - step(0.3, d);\n  gl_FragColor = vec4(vec3(c), 1.0);\n}",
+          ),
+          task: "st を 3倍して fract を取り、白い円を 3×3 に並べよう。",
+          validators: [
+            { kind: "compiles" },
+            { kind: "sourceMatches", pattern: "fract" },
+            { kind: "pixelApprox", x: 0.5, y: 0.5, rgb: WHITE },
+            { kind: "pixelApprox", x: 0.15, y: 0.15, rgb: WHITE },
+            { kind: "pixelApprox", x: 0.85, y: 0.15, rgb: WHITE },
+            { kind: "pixelApprox", x: 0.15, y: 0.85, rgb: WHITE },
+            { kind: "pixelApprox", x: 0.85, y: 0.85, rgb: WHITE },
+            { kind: "pixelApprox", x: 0.35, y: 0.35, rgb: BLACK },
+            { kind: "pixelApprox", x: 0.65, y: 0.65, rgb: BLACK },
+            { kind: "pixelApprox", x: 0.02, y: 0.02, rgb: BLACK },
+          ],
+          hints: ["vec2 g = fract(st * 3.0);", "g はマスごとに 0〜1 なので、中心 vec2(0.5) からの距離がそのまま使えます"],
+          solution: sh(
+            "void main() {\n  vec2 st = gl_FragCoord.xy / u_resolution;\n  vec2 g = fract(st * 3.0);\n  float d = distance(g, vec2(0.5));\n  float c = 1.0 - step(0.3, d);\n  gl_FragColor = vec4(vec3(c), 1.0);\n}",
+          ),
+        },
+      },
+    ],
+  },
+  {
+    id: "glsl-sdf",
+    domain: "glsl",
+    title: "距離関数（SDF）",
+    summary: "「形までの距離」を返す関数で図形を描き、輪郭にし、溶かし合わせる。",
+    icon: "📏",
+    lessons: [
+      {
+        id: "glsl-sdf-box",
+        title: "箱の SDF: abs と max",
+        explanation:
+          "<p><b>符号付き距離関数（SDF）</b>は、点から形までの距離を返す関数です。形の外では正、" +
+          "中では負、ふちでちょうど 0 になるので、<code>step(0.0, d)</code> で中と外を塗り分けられます。" +
+          "円は <code>length(p) - r</code>。長方形は <code>abs(p)</code> で第1象限に折りたたみ、" +
+          "半分の大きさ <code>b</code> を引いて、はみ出した分の長さを取ります（<code>sdBox</code>）。</p>",
+        challenge: {
+          starterCode: sh(
+            "// 中心が原点・半分の大きさが b の長方形までの距離\n" +
+              "float sdBox(vec2 p, vec2 b) {\n" +
+              "  vec2 q = abs(p) - b;\n" +
+              "  return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0);\n" +
+              "}\n\n" +
+              "void main() {\n" +
+              CENTRED +
+              "  float d = length(p) - 0.5;\n" +
+              "  float c = 1.0 - step(0.0, d);\n" +
+              "  gl_FragColor = vec4(vec3(c), 1.0);\n}",
+          ),
+          task: "円の距離 d を sdBox に置き換えて、横 0.6・縦 0.3（半分の大きさ）の白い長方形を描こう。",
+          validators: [
+            { kind: "compiles" },
+            { kind: "pixelApprox", x: 0.5, y: 0.5, rgb: WHITE },
+            { kind: "pixelApprox", x: 0.77, y: 0.5, rgb: WHITE },
+            { kind: "pixelApprox", x: 0.23, y: 0.5, rgb: WHITE },
+            { kind: "pixelApprox", x: 0.5, y: 0.7, rgb: BLACK },
+            { kind: "pixelApprox", x: 0.5, y: 0.3, rgb: BLACK },
+            { kind: "pixelApprox", x: 0.05, y: 0.05, rgb: BLACK },
+          ],
+          hints: ["float d = sdBox(p, vec2(0.6, 0.3));", "p は中心が (0, 0) で、短い辺が -1〜1 の座標です"],
+          solution: sh(
+            "float sdBox(vec2 p, vec2 b) {\n" +
+              "  vec2 q = abs(p) - b;\n" +
+              "  return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0);\n" +
+              "}\n\n" +
+              "void main() {\n" +
+              CENTRED +
+              "  float d = sdBox(p, vec2(0.6, 0.3));\n" +
+              "  float c = 1.0 - step(0.0, d);\n" +
+              "  gl_FragColor = vec4(vec3(c), 1.0);\n}",
+          ),
+        },
+      },
+      {
+        id: "glsl-sdf-ring",
+        title: "輪郭だけ残す: abs(d)",
+        explanation:
+          "<p>距離 <code>d</code> の絶対値 <code>abs(d)</code> は「ふちからの距離」です。" +
+          "そこから太さ <code>w</code> を引いて 0 以下の部分を塗ると、形の<b>輪郭だけ</b>が太さ 2w の帯として残ります。" +
+          "どんな SDF にも同じ手が使えます。</p>",
+        challenge: {
+          starterCode: sh(
+            "void main() {\n" +
+              CENTRED +
+              "  float d = length(p) - 0.5;\n" +
+              "  float c = 1.0 - step(0.0, d);\n" +
+              "  gl_FragColor = vec4(vec3(c), 1.0);\n}",
+          ),
+          task: "abs を使って、半径 0.5 の円を太さ 0.1（片側）の白いリングにしよう。中は黒に。",
+          validators: [
+            { kind: "compiles" },
+            { kind: "sourceMatches", pattern: "abs" },
+            { kind: "pixelApprox", x: 0.5, y: 0.5, rgb: BLACK },
+            { kind: "pixelApprox", x: 0.74, y: 0.5, rgb: WHITE },
+            { kind: "pixelApprox", x: 0.26, y: 0.5, rgb: WHITE },
+            { kind: "pixelApprox", x: 0.5, y: 0.74, rgb: WHITE },
+            { kind: "pixelApprox", x: 0.5, y: 0.26, rgb: WHITE },
+            { kind: "pixelApprox", x: 0.5, y: 0.93, rgb: BLACK },
+            { kind: "pixelApprox", x: 0.05, y: 0.05, rgb: BLACK },
+          ],
+          hints: ["float ring = abs(d) - 0.1;", "float c = 1.0 - step(0.0, ring);"],
+          solution: sh(
+            "void main() {\n" +
+              CENTRED +
+              "  float d = length(p) - 0.5;\n" +
+              "  float ring = abs(d) - 0.1;\n" +
+              "  float c = 1.0 - step(0.0, ring);\n" +
+              "  gl_FragColor = vec4(vec3(c), 1.0);\n}",
+          ),
+        },
+      },
+      {
+        id: "glsl-sdf-smooth-union",
+        title: "溶かしてつなぐ: smooth min",
+        explanation:
+          "<p>2つの SDF の <code>min()</code> を取ると形の<b>和集合</b>になりますが、つなぎ目は角ばったままです。" +
+          "<code>smin(a, b, k)</code> は min をなめらかにしたもので、近づいた形どうしが " +
+          "<code>k</code> の範囲で溶け合います（メタボール風）。</p>",
+        challenge: {
+          starterCode: sh(
+            "// なめらかな min（k が大きいほど広く溶け合う）\n" +
+              "float smin(float a, float b, float k) {\n" +
+              "  float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);\n" +
+              "  return mix(b, a, h) - k * h * (1.0 - h);\n" +
+              "}\n\n" +
+              "void main() {\n" +
+              CENTRED +
+              "  float d1 = length(p - vec2(-0.38, 0.0)) - 0.3;\n" +
+              "  float d2 = length(p - vec2(0.38, 0.0)) - 0.3;\n" +
+              "  float d = min(d1, d2);\n" +
+              "  float c = 1.0 - step(0.0, d);\n" +
+              "  gl_FragColor = vec4(vec3(c), 1.0);\n}",
+          ),
+          task: "min を smin（k = 0.6）に変えて、離れた2つの円をなめらかにつなごう。",
+          validators: [
+            { kind: "compiles" },
+            { kind: "pixelApprox", x: 0.5, y: 0.5, rgb: WHITE },
+            { kind: "pixelApprox", x: 0.31, y: 0.5, rgb: WHITE },
+            { kind: "pixelApprox", x: 0.69, y: 0.5, rgb: WHITE },
+            { kind: "pixelApprox", x: 0.5, y: 0.9, rgb: BLACK },
+            { kind: "pixelApprox", x: 0.05, y: 0.05, rgb: BLACK },
+            { kind: "pixelApprox", x: 0.95, y: 0.95, rgb: BLACK },
+          ],
+          hints: ["float d = smin(d1, d2, 0.6);", "min(d1, d2) のままだと 2つの円の間は黒いままです"],
+          solution: sh(
+            "float smin(float a, float b, float k) {\n" +
+              "  float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);\n" +
+              "  return mix(b, a, h) - k * h * (1.0 - h);\n" +
+              "}\n\n" +
+              "void main() {\n" +
+              CENTRED +
+              "  float d1 = length(p - vec2(-0.38, 0.0)) - 0.3;\n" +
+              "  float d2 = length(p - vec2(0.38, 0.0)) - 0.3;\n" +
+              "  float d = smin(d1, d2, 0.6);\n" +
+              "  float c = 1.0 - step(0.0, d);\n" +
+              "  gl_FragColor = vec4(vec3(c), 1.0);\n}",
+          ),
+        },
+      },
+    ],
+  },
+  {
+    id: "glsl-polar",
+    domain: "glsl",
+    title: "極座標",
+    summary: "角度 atan と半径 length で座標を取り直し、放射模様や花びらを描く。",
+    icon: "🌸",
+    lessons: [
+      {
+        id: "glsl-polar-rays",
+        title: "放射する光: atan",
+        explanation:
+          "<p><code>atan(p.y, p.x)</code> は中心から見た<b>角度</b>（-π〜π）を返します。" +
+          "角度を <code>cos(a * 6.0)</code> に入れると 1周で 6回波打つので、" +
+          "<code>step</code> で白黒にすれば中心から放射する 6本の光条になります。</p>",
+        challenge: {
+          starterCode: sh(
+            "void main() {\n" +
+              CENTRED +
+              "  float a = 0.0;\n" +
+              "  float c = step(0.0, cos(a * 6.0));\n" +
+              "  gl_FragColor = vec4(vec3(c), 1.0);\n}",
+          ),
+          task: "角度 a を atan(p.y, p.x) で求めて、中心から 6本の光が放射する模様にしよう。",
+          validators: [
+            { kind: "compiles" },
+            { kind: "sourceMatches", pattern: "atan" },
+            { kind: "notUniform" },
+            { kind: "pixelApprox", x: 0.85, y: 0.5, rgb: WHITE },
+            { kind: "pixelApprox", x: 0.15, y: 0.5, rgb: WHITE },
+            { kind: "pixelApprox", x: 0.5, y: 0.85, rgb: BLACK },
+            { kind: "pixelApprox", x: 0.5, y: 0.15, rgb: BLACK },
+            { kind: "pixelApprox", x: 0.675, y: 0.803, rgb: WHITE },
+            { kind: "pixelApprox", x: 0.803, y: 0.675, rgb: BLACK },
+          ],
+          hints: ["float a = atan(p.y, p.x);", "引数の順番は atan(y, x)。逆にすると模様が 90度ずれます"],
+          solution: sh(
+            "void main() {\n" +
+              CENTRED +
+              "  float a = atan(p.y, p.x);\n" +
+              "  float c = step(0.0, cos(a * 6.0));\n" +
+              "  gl_FragColor = vec4(vec3(c), 1.0);\n}",
+          ),
+        },
+      },
+      {
+        id: "glsl-polar-flower",
+        title: "花びらを描く: 半径を角度で揺らす",
+        explanation:
+          "<p>円の半径 <code>r</code> を定数ではなく<b>角度の関数</b>にすると、ふちが波打ちます。" +
+          "<code>0.5 + 0.2 * cos(a * 5.0)</code> なら半径が 0.3〜0.7 の間を 1周で 5回ゆれて、" +
+          "花びら 5枚の花になります。</p>",
+        challenge: {
+          starterCode: sh(
+            "void main() {\n" +
+              CENTRED +
+              "  float a = atan(p.y, p.x);\n" +
+              "  float r = 0.5;\n" +
+              "  float c = 1.0 - step(r, length(p));\n" +
+              "  gl_FragColor = vec4(vec3(c), 1.0);\n}",
+          ),
+          task: "半径 r を 0.5 + 0.2 * cos(a * 5.0) にして、花びら 5枚の白い花を描こう。",
+          validators: [
+            { kind: "compiles" },
+            { kind: "sourceMatches", pattern: "cos" },
+            { kind: "pixelApprox", x: 0.5, y: 0.5, rgb: WHITE },
+            { kind: "pixelApprox", x: 0.81, y: 0.5, rgb: WHITE },
+            { kind: "pixelApprox", x: 0.29, y: 0.5, rgb: BLACK },
+            { kind: "pixelApprox", x: 0.04, y: 0.04, rgb: BLACK },
+            { kind: "pixelApprox", x: 0.5, y: 0.96, rgb: BLACK },
+          ],
+          hints: ["float r = 0.5 + 0.2 * cos(a * 5.0);", "5.0 を変えると花びらの枚数が変わります"],
+          solution: sh(
+            "void main() {\n" +
+              CENTRED +
+              "  float a = atan(p.y, p.x);\n" +
+              "  float r = 0.5 + 0.2 * cos(a * 5.0);\n" +
+              "  float c = 1.0 - step(r, length(p));\n" +
+              "  gl_FragColor = vec4(vec3(c), 1.0);\n}",
+          ),
+        },
+      },
+    ],
+  },
+  {
+    id: "glsl-noise",
+    domain: "glsl",
+    title: "乱数とノイズ",
+    summary: "GLSL に乱数関数はない。ハッシュで乱数を作り、補間してなめらかなノイズにする。",
+    icon: "🌫️",
+    lessons: [
+      {
+        id: "glsl-random-cells",
+        title: "乱数をつくる: fract(sin(…))",
+        explanation:
+          "<p>GLSL には乱数関数がありません。代わりに <code>sin</code> に大きな数を掛けて " +
+          "<code>fract</code> を取ると、入力がわずかに違うだけで値が飛び回る「ハッシュ」になります。" +
+          "同じ入力には必ず同じ値が返るので、<code>floor</code> で求めた<b>マスの番号</b>を渡せば、" +
+          "マスごとに決まった明るさが得られます。桁の大きい計算なので、このトラックでは " +
+          "<code>precision highp float</code> にしています。</p>",
+        challenge: {
+          starterCode: shHigh(
+            RANDOM_FN +
+              "void main() {\n" +
+              "  vec2 st = gl_FragCoord.xy / u_resolution;\n" +
+              "  vec2 cell = st * 8.0;\n" +
+              "  float c = random(vec2(0.0));\n" +
+              "  gl_FragColor = vec4(vec3(c), 1.0);\n}",
+          ),
+          task: "floor でマスの番号を求めて random に渡し、8×8 のマスをでたらめな明るさで塗ろう。",
+          validators: [
+            { kind: "compiles" },
+            { kind: "sourceMatches", pattern: "floor" },
+            { kind: "cellsFlat", cells: 8 },
+          ],
+          hints: ["vec2 cell = floor(st * 8.0);", "float c = random(cell);"],
+          solution: shHigh(
+            RANDOM_FN +
+              "void main() {\n" +
+              "  vec2 st = gl_FragCoord.xy / u_resolution;\n" +
+              "  vec2 cell = floor(st * 8.0);\n" +
+              "  float c = random(cell);\n" +
+              "  gl_FragColor = vec4(vec3(c), 1.0);\n}",
+          ),
+        },
+      },
+      {
+        id: "glsl-value-noise",
+        title: "なめらかなノイズ: 四隅を補間する",
+        explanation:
+          "<p>マスの<b>四隅</b>の乱数 <code>a, b, c, d</code> を、マス内の位置 <code>u</code> で " +
+          "<code>mix</code> すると、マスの境目が消えてなめらかにつながります（バリューノイズ）。" +
+          "横に 2回、その結果を縦に 1回、合計 3回の mix です。<code>u</code> は " +
+          "<code>smoothstep</code> を通した位置なので、つなぎ目の傾きも連続になります。</p>",
+        challenge: {
+          starterCode: shHigh(
+            RANDOM_FN +
+              "void main() {\n" +
+              "  vec2 st = gl_FragCoord.xy / u_resolution;\n" +
+              "  vec2 pos = st * 4.0;\n" +
+              "  vec2 i = floor(pos);\n" +
+              "  vec2 f = fract(pos);\n" +
+              "  // マスの四隅の乱数\n" +
+              "  float a = random(i);\n" +
+              "  float b = random(i + vec2(1.0, 0.0));\n" +
+              "  float c = random(i + vec2(0.0, 1.0));\n" +
+              "  float d = random(i + vec2(1.0, 1.0));\n" +
+              "  // なめらかにした、マス内の位置\n" +
+              "  vec2 u = smoothstep(0.0, 1.0, f);\n" +
+              "  float n = a;\n" +
+              "  gl_FragColor = vec4(vec3(n), 1.0);\n}",
+          ),
+          task: "四隅の値 a〜d を u で補間して（mix を 3回）、マスの境目が見えないなめらかなノイズにしよう。",
+          validators: [
+            { kind: "compiles" },
+            { kind: "sourceMatches", pattern: "mix" },
+            { kind: "notUniform" },
+            { kind: "smooth", maxStep: 0.35 },
+          ],
+          hints: [
+            "下辺 mix(a, b, u.x) と上辺 mix(c, d, u.x) を、さらに u.y で mix します",
+            "float n = mix(mix(a, b, u.x), mix(c, d, u.x), u.y);",
+          ],
+          solution: shHigh(
+            RANDOM_FN +
+              "void main() {\n" +
+              "  vec2 st = gl_FragCoord.xy / u_resolution;\n" +
+              "  vec2 pos = st * 4.0;\n" +
+              "  vec2 i = floor(pos);\n" +
+              "  vec2 f = fract(pos);\n" +
+              "  float a = random(i);\n" +
+              "  float b = random(i + vec2(1.0, 0.0));\n" +
+              "  float c = random(i + vec2(0.0, 1.0));\n" +
+              "  float d = random(i + vec2(1.0, 1.0));\n" +
+              "  vec2 u = smoothstep(0.0, 1.0, f);\n" +
+              "  float n = mix(mix(a, b, u.x), mix(c, d, u.x), u.y);\n" +
+              "  gl_FragColor = vec4(vec3(n), 1.0);\n}",
+          ),
+        },
+      },
+    ],
+  },
+  {
+    id: "glsl-post",
+    domain: "glsl",
+    title: "仕上げのエフェクト",
+    summary: "ビネットや色ずれなど、できた絵に後からかける「ポストエフェクト」の考え方。",
+    icon: "📷",
+    lessons: [
+      {
+        id: "glsl-vignette",
+        title: "周辺を暗く: ビネット",
+        explanation:
+          "<p><b>ビネット</b>は画面の四隅を暗くして視線を中央に集める定番のエフェクトです。" +
+          "中心からの距離 <code>d</code> を <code>smoothstep</code> に通し、1 から引いた値を" +
+          "色に掛けます。中央（d が小さい）は 1 のまま、四隅（d が大きい）ほど 0 に近づきます。</p>",
+        challenge: {
+          starterCode: sh(
+            "void main() {\n" +
+              "  vec2 st = gl_FragCoord.xy / u_resolution;\n" +
+              "  vec3 col = vec3(1.0, 0.8, 0.4);\n" +
+              "  float d = distance(st, vec2(0.5));\n" +
+              "  float v = 1.0;\n" +
+              "  gl_FragColor = vec4(col * v, 1.0);\n}",
+          ),
+          task: "d から係数 v を作り、中央は明るいまま・四隅はほぼ黒になるようにしよう（0.3〜0.75 でなめらかに）。",
+          validators: [
+            { kind: "compiles" },
+            { kind: "pixelApprox", x: 0.5, y: 0.5, rgb: [1, 0.8, 0.4] },
+            { kind: "pixelApprox", x: 0.03, y: 0.03, rgb: BLACK, tol: 0.2 },
+            { kind: "pixelApprox", x: 0.97, y: 0.97, rgb: BLACK, tol: 0.2 },
+            { kind: "pixelApprox", x: 0.97, y: 0.03, rgb: BLACK, tol: 0.2 },
+            { kind: "pixelApprox", x: 0.03, y: 0.97, rgb: BLACK, tol: 0.2 },
+            { kind: "smooth", maxStep: 0.2 },
+          ],
+          hints: [
+            "float v = 1.0 - smoothstep(0.3, 0.75, d);",
+            "smoothstep の第1引数より小さい d は 0、第2引数より大きい d は 1 になります",
+          ],
+          solution: sh(
+            "void main() {\n" +
+              "  vec2 st = gl_FragCoord.xy / u_resolution;\n" +
+              "  vec3 col = vec3(1.0, 0.8, 0.4);\n" +
+              "  float d = distance(st, vec2(0.5));\n" +
+              "  float v = 1.0 - smoothstep(0.3, 0.75, d);\n" +
+              "  gl_FragColor = vec4(col * v, 1.0);\n}",
+          ),
+        },
+      },
+      {
+        id: "glsl-chromatic-aberration",
+        title: "色ずれ: 色収差",
+        explanation:
+          "<p>レンズの<b>色収差</b>は、色ごとに像の位置がわずかにずれる現象です。" +
+          "シェーダーでは、元の絵を返す関数を R・G・B で<b>少しずつ違う座標</b>から読むだけで再現できます。" +
+          "赤は右にずらした座標、青は左にずらした座標から読むと、ふちに赤と青のにじみが出ます。</p>",
+        challenge: {
+          starterCode: sh(
+            "// 元の絵: 中央の白い円（座標 uv の明るさを返す）\n" +
+              "float scene(vec2 uv) {\n" +
+              "  return 1.0 - step(0.25, distance(uv, vec2(0.5)));\n" +
+              "}\n\n" +
+              "void main() {\n" +
+              "  vec2 st = gl_FragCoord.xy / u_resolution;\n" +
+              "  vec2 off = vec2(0.08, 0.0);\n" +
+              "  float r = scene(st);\n" +
+              "  float g = scene(st);\n" +
+              "  float b = scene(st);\n" +
+              "  gl_FragColor = vec4(r, g, b, 1.0);\n}",
+          ),
+          task: "赤は st + off、青は st - off の位置から絵を読んで、円の左に赤・右に青のにじみを出そう。",
+          validators: [
+            { kind: "compiles" },
+            { kind: "pixelApprox", x: 0.5, y: 0.5, rgb: WHITE },
+            { kind: "pixelApprox", x: 0.21, y: 0.5, rgb: [1, 0, 0] },
+            { kind: "pixelApprox", x: 0.79, y: 0.5, rgb: [0, 0, 1] },
+            { kind: "pixelApprox", x: 0.05, y: 0.05, rgb: BLACK },
+          ],
+          hints: ["float r = scene(st + off);", "float b = scene(st - off);  // 緑はそのまま"],
+          solution: sh(
+            "float scene(vec2 uv) {\n" +
+              "  return 1.0 - step(0.25, distance(uv, vec2(0.5)));\n" +
+              "}\n\n" +
+              "void main() {\n" +
+              "  vec2 st = gl_FragCoord.xy / u_resolution;\n" +
+              "  vec2 off = vec2(0.08, 0.0);\n" +
+              "  float r = scene(st + off);\n" +
+              "  float g = scene(st);\n" +
+              "  float b = scene(st - off);\n" +
+              "  gl_FragColor = vec4(r, g, b, 1.0);\n}",
+          ),
+        },
+      },
     ],
   },
   {
     id: "glsl-advanced",
     domain: "glsl",
     title: "上級: 光を当てる",
-    summary: "法線とライト方向の内積で、平面に球の陰影をつける。",
+    summary: "法線とライト方向の内積で陰影をつけ、レイマーチングで本物の 3D の球を描く。",
     icon: "🪐",
     lessons: [
       {
@@ -453,6 +918,73 @@ export const glslTracks: readonly Track[] = [
               "  vec3 L = normalize(vec3(0.6, 0.7, 0.8));\n" +
               "  float diff = max(dot(n, L), 0.0);\n" +
               "  gl_FragColor = vec4(vec3(diff), 1.0);\n}",
+          ),
+        },
+      },
+      {
+        id: "glsl-raymarch-sphere",
+        title: "レイマーチング: 球に向かって進む",
+        explanation:
+          "<p><b>レイマーチング</b>は、ピクセルごとにカメラからレイを飛ばし、3D の SDF <code>map(p)</code> が" +
+          "返す「いちばん近い面までの距離」のぶんだけレイを進める、を繰り返す描画法です。" +
+          "距離がほぼ 0 になったら面に当たったと判定し、そこで陰影を計算します。" +
+          "球の法線は中心からの向き <code>normalize(p)</code> です。</p>",
+        challenge: {
+          starterCode: sh(
+            "// 原点にある半径 1.0 の球までの距離（3D の SDF）\n" +
+              "float map(vec3 p) {\n" +
+              "  return length(p) - 1.0;\n" +
+              "}\n\n" +
+              "void main() {\n" +
+              "  vec2 uv = (gl_FragCoord.xy * 2.0 - u_resolution) / min(u_resolution.x, u_resolution.y);\n" +
+              "  vec3 ro = vec3(0.0, 0.0, 3.0);          // カメラの位置\n" +
+              "  vec3 rd = normalize(vec3(uv, -1.5));    // このピクセルのレイの向き\n" +
+              "  float t = 0.0;                          // レイが進んだ距離\n" +
+              "  vec3 col = vec3(0.0, 0.0, 0.05);        // 背景色\n" +
+              "  for (int i = 0; i < 48; i++) {\n" +
+              "    vec3 p = ro + rd * t;\n" +
+              "    float d = map(p);\n" +
+              "    if (d < 0.001) {\n" +
+              "      vec3 n = normalize(p);\n" +
+              "      vec3 L = normalize(vec3(0.6, 0.7, 0.8));\n" +
+              "      col = vec3(max(dot(n, L), 0.0));\n" +
+              "      break;\n" +
+              "    }\n" +
+              "    // ここで、距離 d のぶんだけレイを進めよう\n" +
+              "  }\n" +
+              "  gl_FragColor = vec4(col, 1.0);\n}",
+          ),
+          task: "ループの最後で t を d だけ進めて、レイが球に当たるようにしよう。",
+          validators: [
+            { kind: "compiles" },
+            { kind: "notUniform" },
+            { kind: "pixelApprox", x: 0.5, y: 0.5, rgb: [0.65, 0.65, 0.65], tol: 0.28 },
+            { kind: "regionColor", rect: [0, 0, 0.12, 0.12], rgb: [0, 0, 0.05], tol: 0.12 },
+            { kind: "regionColor", rect: [0.88, 0.88, 1, 1], rgb: [0, 0, 0.05], tol: 0.12 },
+          ],
+          hints: ["t += d;", "進んだ先の p = ro + rd * t でまた map を見る、の繰り返しです"],
+          solution: sh(
+            "float map(vec3 p) {\n" +
+              "  return length(p) - 1.0;\n" +
+              "}\n\n" +
+              "void main() {\n" +
+              "  vec2 uv = (gl_FragCoord.xy * 2.0 - u_resolution) / min(u_resolution.x, u_resolution.y);\n" +
+              "  vec3 ro = vec3(0.0, 0.0, 3.0);\n" +
+              "  vec3 rd = normalize(vec3(uv, -1.5));\n" +
+              "  float t = 0.0;\n" +
+              "  vec3 col = vec3(0.0, 0.0, 0.05);\n" +
+              "  for (int i = 0; i < 48; i++) {\n" +
+              "    vec3 p = ro + rd * t;\n" +
+              "    float d = map(p);\n" +
+              "    if (d < 0.001) {\n" +
+              "      vec3 n = normalize(p);\n" +
+              "      vec3 L = normalize(vec3(0.6, 0.7, 0.8));\n" +
+              "      col = vec3(max(dot(n, L), 0.0));\n" +
+              "      break;\n" +
+              "    }\n" +
+              "    t += d;\n" +
+              "  }\n" +
+              "  gl_FragColor = vec4(col, 1.0);\n}",
           ),
         },
       },

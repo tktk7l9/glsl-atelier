@@ -185,7 +185,7 @@ describe("routing", () => {
     const last = LESSONS[LESSONS.length - 1];
     location.hash = `#${last.id}`;
     await waitFor(() => expect(controller.open).toHaveBeenLastCalledWith(last.id));
-    expect(crumb().textContent).toBe(`アニメーション › ${last.title}`);
+    expect(crumb().textContent).toBe(`空気感: 霧と影 › ${last.title}`);
     expect(lessonById(last.id)?.title).toBe(last.title);
   });
 

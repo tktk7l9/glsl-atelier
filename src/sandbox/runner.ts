@@ -8,8 +8,9 @@
 // file is bundled inline into sandbox.html by the Vite plugin (see vite.config.ts).
 
 import * as THREE from "three";
-import type { SceneObject, SceneSnapshot } from "../engine/validate/snapshot.js";
+import type { SceneSnapshot } from "../engine/validate/snapshot.js";
 import { toGridSamples } from "./sample-grid.js";
+import { collectObjects } from "./scene-graph.js";
 
 const GRID = 16;
 
@@ -20,19 +21,23 @@ canvas.style.cssText = "display:block;width:100%;height:100%";
 document.body.appendChild(canvas);
 
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
-renderer.setClearColor(0x05060d, 1);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+
+/** The renderer is shared by every run, but learner code may flip its switches
+ *  (shadow maps, clear colour); put them back so one run cannot leak into the
+ *  next and a lesson is judged on its own code. */
+function resetRenderer(): void {
+  renderer.setClearColor(0x05060d, 1);
+  renderer.shadowMap.enabled = false;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
+}
+resetRenderer();
 
 function fit(): void {
   renderer.setSize(window.innerWidth || 220, window.innerHeight || 220, false);
 }
 fit();
 window.addEventListener("resize", fit);
-
-function hexToRgb(hex: string): [number, number, number] {
-  const n = parseInt(hex, 16);
-  return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
-}
 
 function disposeScene(scene: THREE.Scene): void {
   scene.traverse((o) => {
@@ -54,6 +59,7 @@ function run(code: string): SceneSnapshot {
   const camera = new THREE.PerspectiveCamera(60, w / h || 1, 0.1, 100);
   camera.position.set(0, 0, 5);
   camera.lookAt(0, 0, 0);
+  resetRenderer();
 
   let error: string | null = null;
   try {
@@ -64,29 +70,7 @@ function run(code: string): SceneSnapshot {
     error = e instanceof Error ? e.message : String(e);
   }
 
-  const objects: SceneObject[] = [];
-  scene.traverse((obj) => {
-    if (obj === scene) return;
-    const any = obj as unknown as {
-      geometry?: { type?: string };
-      material?: { type?: string; color?: { getHexString(): string } } | Array<{ type?: string }>;
-    };
-    const mat = Array.isArray(any.material) ? any.material[0] : any.material;
-    const colorObj =
-      mat && !Array.isArray(mat) && "color" in mat
-        ? (mat as { color?: { getHexString(): string } }).color
-        : undefined;
-    objects.push({
-      id: obj.name || obj.uuid.slice(0, 8),
-      type: obj.type,
-      geometry: any.geometry?.type ?? null,
-      material: mat?.type ?? null,
-      color: colorObj ? hexToRgb(colorObj.getHexString()) : null,
-      position: [obj.position.x, obj.position.y, obj.position.z],
-      scale: [obj.scale.x, obj.scale.y, obj.scale.z],
-      visible: obj.visible,
-    });
-  });
+  const objects = collectObjects(scene);
 
   let samples;
   try {

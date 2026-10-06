@@ -97,8 +97,47 @@ describe("shader validators", () => {
     reject({ kind: "compiles" }, shader({ compiled: false }));
   });
 
-  it("rejects shader specs on a scene snapshot", () => {
+  it("rejects `compiles` on a scene snapshot", () => {
     expect(runSpec({ kind: "compiles" }, scene()).message).toContain("シェーダー");
+  });
+
+  it("judges pixel specs on a rendered scene, and reports a scene that was not rendered", () => {
+    const rendered = scene({ samples: [px(0.5, 0.5, 1, 0, 0)] });
+    pass({ kind: "pixelApprox", x: 0.5, y: 0.5, rgb: [1, 0, 0] }, rendered);
+    reject({ kind: "pixelApprox", x: 0.5, y: 0.5, rgb: [0, 0, 1] }, rendered);
+    pass({ kind: "regionColor", rect: [0, 0, 1, 1], rgb: [1, 0, 0] }, rendered);
+    expect(runSpec({ kind: "pixelApprox", x: 0.5, y: 0.5, rgb: [1, 0, 0] }, scene()).message).toContain(
+      "描画結果",
+    );
+  });
+
+  it("smooth", () => {
+    const soft = shader({ samples: [px(0.1, 0.5, 0, 0, 0), px(0.5, 0.5, 0.2, 0.2, 0.2), px(0.9, 0.5, 0.4, 0.4, 0.4)] });
+    const hard = shader({ samples: [px(0.1, 0.5, 0, 0, 0), px(0.5, 0.5, 1, 1, 1)] });
+    pass({ kind: "smooth" }, soft);
+    reject({ kind: "smooth" }, hard);
+    pass({ kind: "smooth", maxStep: 1 }, hard);
+    reject({ kind: "smooth", maxStep: 0.1 }, soft);
+    expect(runSpec({ kind: "smooth" }, hard).message).toContain("なめらか");
+  });
+
+  it("cellsFlat", () => {
+    const mosaic = shader({
+      samples: [
+        px(0.2, 0.2, 0, 0, 0), px(0.3, 0.3, 0, 0, 0),
+        px(0.7, 0.2, 1, 1, 1), px(0.8, 0.3, 1, 1, 1),
+        px(0.2, 0.7, 0.5, 0.5, 0.5), px(0.7, 0.7, 0.5, 0.5, 0.5),
+      ],
+    });
+    pass({ kind: "cellsFlat", cells: 2 }, mosaic);
+    // One grey everywhere: flat cells, but no variation between them.
+    const flat = shader({ samples: [px(0.2, 0.2, 0.5, 0.5, 0.5), px(0.7, 0.7, 0.5, 0.5, 0.5)] });
+    expect(runSpec({ kind: "cellsFlat", cells: 2 }, flat).message).toContain("マスごとの明るさ");
+    pass({ kind: "cellsFlat", cells: 2, minVariance: 0 }, flat);
+    // Per-pixel noise: a cell is not one colour.
+    const noisy = shader({ samples: [px(0.2, 0.2, 0, 0, 0), px(0.3, 0.3, 1, 1, 1), px(0.7, 0.7, 0.5, 0.5, 0.5)] });
+    expect(runSpec({ kind: "cellsFlat", cells: 2 }, noisy).message).toContain("2×2");
+    pass({ kind: "cellsFlat", cells: 2, tol: 1, minVariance: 0 }, noisy);
   });
 
   it("pixelApprox", () => {
@@ -196,6 +235,24 @@ describe("scene validators", () => {
     reject({ kind: "colorApprox", rgb: [0, 0, 1] }, snap);
     reject({ kind: "colorApprox", rgb: [1, 0, 0] }, scene({ objects: [obj({ type: "Mesh" })] }));
     pass({ kind: "colorApprox", rgb: [0.9, 0, 0], type: "Mesh", tol: 0.2 }, snap);
+  });
+
+  it("scaleApprox", () => {
+    const snap = scene({ objects: [obj({ type: "Mesh", scale: [2, 2, 2] }), obj({ type: "PointLight" })] });
+    pass({ kind: "scaleApprox", scale: [2, 2, 2] }, snap);
+    pass({ kind: "scaleApprox", scale: [2.1, 2, 2], type: "Mesh" }, snap);
+    reject({ kind: "scaleApprox", scale: [1, 1, 1], type: "Mesh" }, snap);
+    reject({ kind: "scaleApprox", scale: [2, 2, 2], type: "PointLight" }, snap);
+    expect(runSpec({ kind: "scaleApprox", scale: [3, 3, 3] }, snap).message).toContain("(3, 3, 3)");
+  });
+
+  it("instanced", () => {
+    const snap = scene({ objects: [obj({ type: "Mesh" }), obj({ type: "Mesh", instances: 5 })] });
+    pass({ kind: "instanced", min: 5 }, snap);
+    reject({ kind: "instanced", min: 6 }, snap);
+    expect(runSpec({ kind: "instanced", min: 1 }, scene({ objects: [obj({ type: "Mesh" })] })).message).toContain(
+      "現在 0 個",
+    );
   });
 
   it("cameraPositioned", () => {

@@ -19,13 +19,13 @@ export default defineConfig({
     css: { include: [/styles\.css/] },
     coverage: {
       provider: "v8",
-      include: ["src/engine/**/*.ts", ...UI_FILES],
+      include: ["src/engine/**/*.ts", "src/sandbox/scene-graph.ts", ...UI_FILES],
       exclude: ["src/**/*.test.ts"],
       reporter: ["text", "json-summary", "html"],
       thresholds: {
         // Keep the pure logic layer (content / validate / color / sample / tokenize / progress)
-        // at 100%.
-        "src/engine/**/*.ts": {
+        // and the scene-graph snapshot (pure, runs in Node against three) at 100%.
+        "{src/engine/**/*.ts,src/sandbox/scene-graph.ts}": {
           statements: 100,
           branches: 100,
           functions: 100,

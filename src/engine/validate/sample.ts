@@ -1,6 +1,7 @@
 // Pure helpers over a grid of read-back pixels (Sample[]). These power the
 // shader validators: nearest-pixel lookup, region averages, variance (is the
-// image more than a flat colour?), mirror symmetry, and gradient direction.
+// image more than a flat colour?), mirror symmetry, gradient direction,
+// smoothness between neighbouring samples, and per-cell flatness.
 
 import { colorDistance } from "./color.js";
 import type { RGB, Sample } from "./snapshot.js";
@@ -109,4 +110,65 @@ export function halfDelta(samples: readonly Sample[], axis: "x" | "y", ch: Chann
   }
   if (hiN === 0 || loN === 0) return 0;
   return hi / hiN - lo / loN;
+}
+
+/** Largest luminance jump between two samples that are next to each other on
+ *  the grid (same row or same column). 0 for a flat image or a single sample.
+ *  Low = smooth (a gradient, blurred noise); high = a hard edge somewhere. */
+export function maxNeighbourStep(samples: readonly Sample[]): number {
+  let maxStep = 0;
+  const scan = (primary: "x" | "y"): void => {
+    const secondary = primary === "x" ? "y" : "x";
+    // Sort so that consecutive entries share a line and walk along it.
+    const sorted = [...samples].sort(
+      (a, b) => a[secondary] - b[secondary] || a[primary] - b[primary],
+    );
+    for (let i = 1; i < sorted.length; i++) {
+      const prev = sorted[i - 1];
+      const cur = sorted[i];
+      if (prev[secondary] !== cur[secondary]) continue;
+      const d = Math.abs(channelValue(rgbOf(cur), "lum") - channelValue(rgbOf(prev), "lum"));
+      if (d > maxStep) maxStep = d;
+    }
+  };
+  scan("x");
+  scan("y");
+  return maxStep;
+}
+
+export interface CellSpread {
+  /** Largest luminance range found inside a single cell (0 = every cell flat). */
+  readonly within: number;
+  /** Variance of the per-cell mean luminance (0 = every cell the same). */
+  readonly between: number;
+}
+
+/** Split the canvas into `cells`×`cells` squares and measure how flat each cell
+ *  is and how much the cells differ from one another — "one random grey per
+ *  tile" has a small `within` and a large `between`. */
+export function cellSpread(samples: readonly Sample[], cells: number): CellSpread {
+  const min = new Map<number, number>();
+  const max = new Map<number, number>();
+  const sum = new Map<number, number>();
+  const n = new Map<number, number>();
+  for (const s of samples) {
+    const cx = Math.min(cells - 1, Math.floor(s.x * cells));
+    const cy = Math.min(cells - 1, Math.floor(s.y * cells));
+    const key = cy * cells + cx;
+    const lum = channelValue(rgbOf(s), "lum");
+    min.set(key, Math.min(min.get(key) ?? Infinity, lum));
+    max.set(key, Math.max(max.get(key) ?? -Infinity, lum));
+    sum.set(key, (sum.get(key) ?? 0) + lum);
+    n.set(key, (n.get(key) ?? 0) + 1);
+  }
+  let within = 0;
+  const means: number[] = [];
+  for (const [key, lo] of min) {
+    within = Math.max(within, (max.get(key) as number) - lo);
+    means.push((sum.get(key) as number) / (n.get(key) as number));
+  }
+  if (means.length === 0) return { within: 0, between: 0 };
+  const mean = means.reduce((a, m) => a + m, 0) / means.length;
+  const between = means.reduce((a, m) => a + (m - mean) * (m - mean), 0) / means.length;
+  return { within, between };
 }

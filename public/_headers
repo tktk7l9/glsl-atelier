@@ -16,6 +16,7 @@
   Referrer-Policy: strict-origin-when-cross-origin
   Permissions-Policy: camera=(), microphone=(), geolocation=()
   Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
+  Cross-Origin-Opener-Policy: same-origin
 
 # Opaque-origin sandbox that runs the learner's code. In exchange for allowing
 # inline/eval, connect-src is set to none to cut off external requests.

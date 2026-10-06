@@ -8,16 +8,21 @@ const KEY = "glsl-atelier:drafts:v1";
 
 type Drafts = Record<string, string>;
 
+/** Stored JSON is untrusted: keep only own string entries, in a prototype-less
+ *  object so keys like `__proto__` / `constructor` can never alias Object.prototype. */
 function read(store: ProgressStore): Drafts {
+  const drafts: Drafts = Object.create(null) as Drafts;
   const raw = store.getItem(KEY);
-  if (!raw) return {};
+  if (!raw) return drafts;
   try {
     const parsed = JSON.parse(raw) as unknown;
-    return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
-      ? (parsed as Drafts)
-      : {};
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return drafts;
+    for (const [id, code] of Object.entries(parsed)) {
+      if (id !== "__proto__" && typeof code === "string") drafts[id] = code;
+    }
+    return drafts;
   } catch {
-    return {};
+    return drafts;
   }
 }
 

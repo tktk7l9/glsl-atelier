@@ -362,7 +362,7 @@ export const threeTracks: readonly Track[] = [
     id: "three-light",
     domain: "three",
     title: "ライティング",
-    summary: "StandardMaterial は光が必要。ライトを足して照らす。",
+    summary: "StandardMaterial は光が必要。環境光・平行光源・点光源で照らし、emissive で自ら光らせる。",
     icon: "💡",
     lessons: [
       {
@@ -426,13 +426,90 @@ export const threeTracks: readonly Track[] = [
             "scene.add(dir);\n",
         },
       },
+      {
+        id: "three-point-light",
+        title: "点光源: PointLight",
+        explanation:
+          "<p><code>PointLight</code> は電球のように<b>1点から全方向へ</b>光を出し、離れるほど暗くなります" +
+          "（距離の 2乗に反比例）。<code>new THREE.PointLight(色, 強さ)</code> で作り、<code>position</code> で" +
+          "置き場所を決めます。光源に近い面だけが明るく照らされ、光のたまりができます。</p>",
+        challenge: {
+          starterCode:
+            "// 正面の白い壁（ライトが無いので真っ暗）\n" +
+            "const wall = new THREE.Mesh(\n" +
+            "  new THREE.PlaneGeometry(14, 14),\n" +
+            "  new THREE.MeshStandardMaterial({ color: 'white' }),\n" +
+            ");\n" +
+            "scene.add(wall);\n\n" +
+            "// ここで点光源を作り、壁の上のほう・少し手前に置こう\n",
+          task: "強さ 3 の PointLight を (0, 1.5, 1) に置いて、壁の上のほうに光のたまりを作ろう。",
+          validators: [
+            { kind: "noError" },
+            { kind: "sourceMatches", pattern: "PointLight" },
+            { kind: "sceneHas", type: "PointLight" },
+            // Bright right in front of the bulb, fading with distance (measured
+            // 0.89–0.94 / 0.38 / 0.11 at 1:1 and 16:9). A bulb placed lower,
+            // farther, dimmer or much brighter misses at least one of these.
+            { kind: "pixelApprox", x: 0.5, y: 0.78, rgb: [0.92, 0.92, 0.92], tol: 0.15 },
+            { kind: "pixelApprox", x: 0.5, y: 0.5, rgb: [0.38, 0.38, 0.38], tol: 0.15 },
+            { kind: "pixelApprox", x: 0.5, y: 0.03, rgb: [0.11, 0.11, 0.11], tol: 0.15 },
+          ],
+          hints: [
+            "const bulb = new THREE.PointLight(0xffffff, 3);",
+            "bulb.position.set(0, 1.5, 1); scene.add(bulb);",
+          ],
+          solution:
+            "const wall = new THREE.Mesh(\n" +
+            "  new THREE.PlaneGeometry(14, 14),\n" +
+            "  new THREE.MeshStandardMaterial({ color: 'white' }),\n" +
+            ");\n" +
+            "scene.add(wall);\n" +
+            "const bulb = new THREE.PointLight(0xffffff, 3);\n" +
+            "bulb.position.set(0, 1.5, 1);\n" +
+            "scene.add(bulb);\n",
+        },
+      },
+      {
+        id: "three-emissive",
+        title: "自分で光る: emissive",
+        explanation:
+          "<p><code>emissive</code> はマテリアルが<b>自分で出す光の色</b>です。ライトが 1つも無くても、その色で光って" +
+          "見えます。画面やネオン、星など、光るものそのものの表現に使い、強さは <code>emissiveIntensity</code> で" +
+          "変えられます。ただし、まわりのものを照らすわけではありません（照らしたいときはライトを足します）。</p>",
+        challenge: {
+          starterCode:
+            "// ライトの無いシーン。MeshStandardMaterial は光が当たらないと真っ黒…\n" +
+            "const ball = new THREE.Mesh(\n" +
+            "  new THREE.SphereGeometry(1.2, 32, 16),\n" +
+            "  new THREE.MeshStandardMaterial({ color: 'white' }),\n" +
+            ");\n" +
+            "scene.add(ball);\n",
+          task: "ライトは足さずに、マテリアルの emissive を 'orange' にして、球をオレンジに光らせよう。",
+          validators: [
+            { kind: "noError" },
+            { kind: "sourceMatches", pattern: "emissive" },
+            { kind: "sceneHas", type: "Mesh" },
+            { kind: "pixelApprox", x: 0.5, y: 0.5, rgb: [1, 0.65, 0], tol: 0.15 },
+          ],
+          hints: [
+            "new THREE.MeshStandardMaterial({ color: 'white', emissive: 'orange' })",
+            "emissive は光が当たらなくても出る色。ライトを足すと白が混ざってしまいます",
+          ],
+          solution:
+            "const ball = new THREE.Mesh(\n" +
+            "  new THREE.SphereGeometry(1.2, 32, 16),\n" +
+            "  new THREE.MeshStandardMaterial({ color: 'white', emissive: 'orange' }),\n" +
+            ");\n" +
+            "scene.add(ball);\n",
+        },
+      },
     ],
   },
   {
     id: "three-transform",
     domain: "three",
     title: "変形とグループ",
-    summary: "拡大縮小、Group でまとめる、InstancedMesh で同じ形をたくさん描く。",
+    summary: "拡大縮小、Group でまとめる、親子でくっつけて動かす、InstancedMesh で同じ形をたくさん描く。",
     icon: "🔧",
     lessons: [
       {
@@ -495,6 +572,58 @@ export const threeTracks: readonly Track[] = [
         },
       },
       {
+        id: "three-hierarchy",
+        title: "親子関係: 親を回すと子もついてくる",
+        explanation:
+          "<p><code>parent.add(child)</code> で、オブジェクトを別のオブジェクトの<b>子</b>にできます。子の " +
+          "<code>position</code> は親から見た位置（ローカル座標）になり、親を動かす・回す・拡大すると、子もいっしょに" +
+          "動きます。惑星の公転や腕と手のように、何かに<b>くっついて動く</b>ものを作るときの基本です。</p>",
+        challenge: {
+          starterCode:
+            "// 中心の太陽\n" +
+            "const sun = new THREE.Mesh(\n" +
+            "  new THREE.SphereGeometry(0.6, 32, 16),\n" +
+            "  new THREE.MeshBasicMaterial({ color: 'gold' }),\n" +
+            ");\n" +
+            "scene.add(sun);\n\n" +
+            "// 惑星（太陽から見て右へ 2）\n" +
+            "const planet = new THREE.Mesh(\n" +
+            "  new THREE.SphereGeometry(0.5, 32, 16),\n" +
+            "  new THREE.MeshBasicMaterial({ color: 'deepskyblue' }),\n" +
+            ");\n" +
+            "planet.position.x = 2;\n" +
+            "scene.add(planet);\n\n" +
+            "// 太陽を z 軸まわりに 90° 回す（いまは惑星がついてこない）\n" +
+            "sun.rotation.z = Math.PI / 2;\n",
+          task: "planet を scene ではなく sun に add して太陽の子にし、太陽の回転で惑星を真上へ運ぼう。",
+          validators: [
+            { kind: "noError" },
+            { kind: "sourceMatches", pattern: "sun\\.add\\s*\\(" },
+            { kind: "sceneHas", type: "Mesh", min: 2 },
+            // The sun stays in the middle; the planet now sits right above it.
+            { kind: "pixelApprox", x: 0.5, y: 0.5, rgb: [1, 0.84, 0], tol: 0.15 },
+            { kind: "pixelApprox", x: 0.5, y: 0.84, rgb: [0, 0.75, 1], tol: 0.15 },
+          ],
+          hints: [
+            "sun.add(planet);  // scene.add(planet) の代わりに",
+            "子の position (2, 0, 0) は太陽から見た位置。太陽が 90° 回ると、真上の (0, 2, 0) に来ます",
+          ],
+          solution:
+            "const sun = new THREE.Mesh(\n" +
+            "  new THREE.SphereGeometry(0.6, 32, 16),\n" +
+            "  new THREE.MeshBasicMaterial({ color: 'gold' }),\n" +
+            ");\n" +
+            "scene.add(sun);\n" +
+            "const planet = new THREE.Mesh(\n" +
+            "  new THREE.SphereGeometry(0.5, 32, 16),\n" +
+            "  new THREE.MeshBasicMaterial({ color: 'deepskyblue' }),\n" +
+            ");\n" +
+            "planet.position.x = 2;\n" +
+            "sun.add(planet);\n" +
+            "sun.rotation.z = Math.PI / 2;\n",
+        },
+      },
+      {
         id: "three-instanced",
         title: "大量に並べる: InstancedMesh",
         explanation:
@@ -545,7 +674,7 @@ export const threeTracks: readonly Track[] = [
     id: "three-camera",
     domain: "three",
     title: "カメラ",
-    summary: "カメラの位置と向きで、シーンの見え方を変える。",
+    summary: "カメラの位置・向き・視野角で、シーンの見え方を変える。",
     icon: "🎥",
     lessons: [
       {
@@ -607,6 +736,69 @@ export const threeTracks: readonly Track[] = [
             "camera.lookAt(0, 0, 0);\n",
         },
       },
+      {
+        id: "three-camera-fov",
+        title: "ズーム: fov と updateProjectionMatrix",
+        explanation:
+          "<p><code>PerspectiveCamera</code> の <code>fov</code> は縦方向の<b>視野角</b>（度）です。小さくすると望遠レンズの" +
+          "ように狭い範囲が大きく写り、大きくすると広角になります（ここでの <code>camera</code> は最初 60°）。" +
+          "ただし <code>fov</code> などのレンズの設定は、変えたあとに <code>camera.updateProjectionMatrix()</code> を" +
+          "呼ぶまで描画に反映されません。</p>",
+        challenge: {
+          starterCode:
+            "const ball = new THREE.Mesh(\n" +
+            "  new THREE.SphereGeometry(1, 32, 16),\n" +
+            "  new THREE.MeshBasicMaterial({ color: 'tomato' }),\n" +
+            ");\n" +
+            "scene.add(ball);\n\n" +
+            "// 視野角 fov を 60° から 30° に狭めて、球を望遠で大きく写そう\n",
+          task: "camera.fov を 30 にして設定を反映させ（updateProjectionMatrix）、球を大きく写そう。",
+          validators: [
+            { kind: "noError" },
+            {
+              kind: "sourceMatches",
+              pattern: "\\.fov\\s*=",
+              message: "camera.fov に新しい視野角（30）を代入しましょう",
+            },
+            {
+              kind: "sourceMatches",
+              pattern: "updateProjectionMatrix",
+              message: "camera.updateProjectionMatrix() を呼んで、fov の変更を反映させましょう",
+            },
+            { kind: "pixelApprox", x: 0.5, y: 0.5, rgb: [1, 0.39, 0.28], tol: 0.15 },
+            // At 60° the ball spans 0.32–0.68 of the height; at 30° it reaches 0.12–0.88.
+            {
+              kind: "pixelApprox",
+              x: 0.5,
+              y: 0.22,
+              rgb: [1, 0.39, 0.28],
+              tol: 0.15,
+              message: "球が大きく写っていません。fov を変えたら camera.updateProjectionMatrix() を呼びましょう",
+            },
+            { kind: "pixelApprox", x: 0.5, y: 0.78, rgb: [1, 0.39, 0.28], tol: 0.15 },
+            {
+              kind: "pixelApprox",
+              x: 0.5,
+              y: 0.03,
+              rgb: BACKGROUND,
+              tol: 0.15,
+              message: "寄りすぎて球が画面からはみ出しています。fov は 30 にしましょう",
+            },
+          ],
+          hints: [
+            "camera.fov = 30;",
+            "camera.updateProjectionMatrix();  // 変更を反映",
+          ],
+          solution:
+            "const ball = new THREE.Mesh(\n" +
+            "  new THREE.SphereGeometry(1, 32, 16),\n" +
+            "  new THREE.MeshBasicMaterial({ color: 'tomato' }),\n" +
+            ");\n" +
+            "scene.add(ball);\n" +
+            "camera.fov = 30;\n" +
+            "camera.updateProjectionMatrix();\n",
+        },
+      },
     ],
   },
   {
@@ -643,6 +835,119 @@ export const threeTracks: readonly Track[] = [
             "const cube = new THREE.Mesh(geo, mat);\n" +
             "scene.add(cube);\n" +
             "cube.rotation.y = 0.6;\n",
+        },
+      },
+    ],
+  },
+  {
+    id: "three-data",
+    domain: "three",
+    title: "データで描く: 点とテクスチャ",
+    summary: "Float32Array や Uint8Array に数値を並べて、点の集まりやテクスチャを自分で組み立てる。",
+    icon: "🧮",
+    lessons: [
+      {
+        id: "three-points",
+        title: "点の集まり: Points",
+        explanation:
+          "<p>星やパーティクルのような<b>たくさんの点</b>は <code>Points</code> で描きます。座標は " +
+          "<code>Float32Array</code> に <code>x, y, z, x, y, z, …</code> と並べ、" +
+          "<code>new THREE.BufferAttribute(配列, 3)</code>（3つの数で 1点）にして " +
+          "<code>geometry.setAttribute('position', …)</code> で渡します。見た目は <code>PointsMaterial</code> で決め、" +
+          "<code>size</code> が点の大きさです（点は画面に正対する正方形として描かれます）。</p>",
+        challenge: {
+          starterCode:
+            "// 半径 2 の円周上に 12 個の点を並べた座標（x, y, z, x, y, z, …）\n" +
+            "const count = 12;\n" +
+            "const positions = new Float32Array(count * 3);\n" +
+            "for (let i = 0; i < count; i++) {\n" +
+            "  const a = (i / count) * Math.PI * 2;\n" +
+            "  positions[i * 3] = Math.cos(a) * 2;\n" +
+            "  positions[i * 3 + 1] = Math.sin(a) * 2;\n" +
+            "  positions[i * 3 + 2] = 0;\n" +
+            "}\n\n" +
+            "const geo = new THREE.BufferGeometry();\n" +
+            "// ① positions を 'position' 属性として geo に渡そう\n\n" +
+            "const mat = new THREE.PointsMaterial({ color: 'gold', size: 1.5 });\n" +
+            "// ② geo と mat から Points を作って scene に追加しよう\n",
+          task: "positions を BufferAttribute にして geo の 'position' に設定し、Points を作って scene に追加しよう。",
+          validators: [
+            { kind: "noError" },
+            { kind: "sourceMatches", pattern: "setAttribute" },
+            { kind: "sceneHas", type: "Points" },
+            { kind: "materialOf", material: "PointsMaterial", type: "Points" },
+            // The ring's top and bottom points sit on the centre line; its middle is empty.
+            { kind: "pixelApprox", x: 0.5, y: 0.84, rgb: [1, 0.84, 0], tol: 0.15 },
+            { kind: "pixelApprox", x: 0.5, y: 0.16, rgb: [1, 0.84, 0], tol: 0.15 },
+            { kind: "pixelApprox", x: 0.5, y: 0.5, rgb: BACKGROUND, tol: 0.15 },
+          ],
+          hints: [
+            "geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));",
+            "const stars = new THREE.Points(geo, mat); scene.add(stars);",
+          ],
+          solution:
+            "const count = 12;\n" +
+            "const positions = new Float32Array(count * 3);\n" +
+            "for (let i = 0; i < count; i++) {\n" +
+            "  const a = (i / count) * Math.PI * 2;\n" +
+            "  positions[i * 3] = Math.cos(a) * 2;\n" +
+            "  positions[i * 3 + 1] = Math.sin(a) * 2;\n" +
+            "  positions[i * 3 + 2] = 0;\n" +
+            "}\n" +
+            "const geo = new THREE.BufferGeometry();\n" +
+            "geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));\n" +
+            "const mat = new THREE.PointsMaterial({ color: 'gold', size: 1.5 });\n" +
+            "const stars = new THREE.Points(geo, mat);\n" +
+            "scene.add(stars);\n",
+        },
+      },
+      {
+        id: "three-data-texture",
+        title: "コードで作る画像: DataTexture",
+        explanation:
+          "<p>画像ファイルが無くても、ピクセルの色を数値で並べればテクスチャになります。<code>Uint8Array</code> に" +
+          "1ピクセルあたり <code>R, G, B, A</code>（0〜255）を、<b>下の段から</b>左→右の順に並べ、" +
+          "<code>new THREE.DataTexture(配列, 幅, 高さ)</code> にします。中身を用意したら " +
+          "<code>texture.needsUpdate = true</code> で「GPU に送って」と知らせるのを忘れずに。" +
+          "忘れると、テクスチャは真っ黒のままです。</p>",
+        challenge: {
+          starterCode:
+            "// 2×2 ピクセルの画像。1ピクセル = R, G, B, A（0〜255）、下の段から左→右の順\n" +
+            "const data = new Uint8Array([\n" +
+            "  255, 0, 0, 255,   0, 255, 0, 255,   // 下の段: 赤, 緑\n" +
+            "  0, 0, 0, 255,     0, 0, 0, 255,     // 上の段: まだ黒\n" +
+            "]);\n" +
+            "const tex = new THREE.DataTexture(data, 2, 2);\n\n" +
+            "const board = new THREE.Mesh(\n" +
+            "  new THREE.PlaneGeometry(4, 4),\n" +
+            "  new THREE.MeshBasicMaterial({ map: tex }),\n" +
+            ");\n" +
+            "scene.add(board);\n",
+          task: "上の段を左から青・白にし、tex の needsUpdate を true にしてテクスチャを GPU に送り、4色のタイルを表示しよう。",
+          validators: [
+            { kind: "noError" },
+            { kind: "sourceMatches", pattern: "needsUpdate" },
+            { kind: "materialOf", material: "MeshBasicMaterial" },
+            // The centre line runs through the left column: red below, blue above.
+            { kind: "pixelApprox", x: 0.5, y: 0.3, rgb: [1, 0, 0], tol: 0.15 },
+            { kind: "pixelApprox", x: 0.5, y: 0.7, rgb: [0, 0, 1], tol: 0.15 },
+          ],
+          hints: [
+            "上の段は 0, 0, 255, 255,   255, 255, 255, 255,",
+            "tex.needsUpdate = true;",
+          ],
+          solution:
+            "const data = new Uint8Array([\n" +
+            "  255, 0, 0, 255,   0, 255, 0, 255,\n" +
+            "  0, 0, 255, 255,   255, 255, 255, 255,\n" +
+            "]);\n" +
+            "const tex = new THREE.DataTexture(data, 2, 2);\n" +
+            "tex.needsUpdate = true;\n" +
+            "const board = new THREE.Mesh(\n" +
+            "  new THREE.PlaneGeometry(4, 4),\n" +
+            "  new THREE.MeshBasicMaterial({ map: tex }),\n" +
+            ");\n" +
+            "scene.add(board);\n",
         },
       },
     ],

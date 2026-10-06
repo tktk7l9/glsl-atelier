@@ -33,6 +33,114 @@ const RANDOM_FN =
 const WHITE: [number, number, number] = [1, 1, 1];
 const BLACK: [number, number, number] = [0, 0, 0];
 
+const SDBOX_FN =
+  "// 中心が原点・半分の大きさが b の長方形までの距離\n" +
+  "float sdBox(vec2 p, vec2 b) {\n" +
+  "  vec2 q = abs(p) - b;\n" +
+  "  return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0);\n" +
+  "}\n\n";
+
+const ROTATE_FN =
+  "// 角度 a（ラジアン）の 2D 回転行列\n" +
+  "mat2 rotate2d(float a) {\n" +
+  "  float c = cos(a);\n" +
+  "  float s = sin(a);\n" +
+  "  return mat2(c, -s, s, c);\n" +
+  "}\n\n";
+
+/** The ray-marching background colour (deep navy). */
+const SKY: [number, number, number] = [0, 0, 0.05];
+
+/** The ray-marched scene shared by the normal and shadow lessons: a unit
+ *  sphere resting on the floor y = -1. */
+const RM_MAP_FN =
+  "// 球（半径 1）と床（y = -1）を合わせたシーンまでの距離\n" +
+  "float map(vec3 p) {\n" +
+  "  float sphere = length(p) - 1.0;\n" +
+  "  float ground = p.y + 1.0;\n" +
+  "  return min(sphere, ground);\n" +
+  "}\n\n";
+
+const RM_NORMAL_FN =
+  "// 距離 map の勾配＝面の向き（法線）\n" +
+  "vec3 calcNormal(vec3 p) {\n" +
+  "  vec2 e = vec2(0.001, 0.0);\n" +
+  "  float dx = map(p + e.xyy) - map(p - e.xyy);\n" +
+  "  float dy = map(p + e.yxy) - map(p - e.yxy);\n" +
+  "  float dz = map(p + e.yyx) - map(p - e.yyx);\n" +
+  "  return normalize(vec3(dx, dy, dz));\n" +
+  "}\n\n";
+
+/** `main()` of the sphere-on-floor ray marcher; `hit` shades the surface point
+ *  `p` (it must assign `col`). */
+const rmMain = (hit: string): string =>
+  "void main() {\n" +
+  "  vec2 uv = (gl_FragCoord.xy * 2.0 - u_resolution) / min(u_resolution.x, u_resolution.y);\n" +
+  "  vec3 ro = vec3(0.0, 0.0, 3.0);\n" +
+  "  vec3 rd = normalize(vec3(uv, -1.5));\n" +
+  "  float t = 0.0;\n" +
+  "  vec3 col = vec3(0.0, 0.0, 0.05);\n" +
+  "  for (int i = 0; i < 100; i++) {\n" +
+  "    vec3 p = ro + rd * t;\n" +
+  "    float d = map(p);\n" +
+  "    if (d < 0.001 * t) {  // 遠くほどゆるく判定して、地平線の近くまでとらえる\n" +
+  hit +
+  "      break;\n" +
+  "    }\n" +
+  "    t += d;\n" +
+  "    if (t > 20.0) break;\n" +
+  "  }\n" +
+  "  gl_FragColor = vec4(col, 1.0);\n}";
+
+/** The shadow-ray function of the shadow lesson; `onHit` is the line that
+ *  reacts to a blocked ray. */
+const rmShadowFn = (onHit: string): string =>
+  "// 点 ro から光の方向 rd へ進み、途中で何かに当たれば 0.0（影）、当たらなければ 1.0\n" +
+  "float shadow(vec3 ro, vec3 rd) {\n" +
+  "  float t = 0.02;\n" +
+  "  for (int i = 0; i < 48; i++) {\n" +
+  "    float h = map(ro + rd * t);\n" +
+  onHit +
+  "    t += h;\n" +
+  "    if (t > 10.0) break;\n" +
+  "  }\n" +
+  "  return 1.0;\n" +
+  "}\n\n";
+
+const RM_SHADOW_HIT =
+  "      vec3 n = calcNormal(p);\n" +
+  "      vec3 L = normalize(vec3(-0.8, 0.6, 0.3));  // 左から低めに差す光\n" +
+  "      float diff = max(dot(n, L), 0.0);\n" +
+  "      float sh = shadow(p + n * 0.01, L);\n" +
+  "      col = vec3(0.08 + 0.92 * diff * sh);\n";
+
+/** The lit-sphere body of the gamma lesson (linear colour in `col`). */
+const GAMMA_SPHERE =
+  "  float r = 0.75;\n" +
+  "  float d = length(p);\n" +
+  "  vec3 col = vec3(0.0);\n" +
+  "  if (d < r) {\n" +
+  "    vec3 n = normalize(vec3(p, sqrt(r * r - d * d)));\n" +
+  "    vec3 L = normalize(vec3(-0.5, 0.6, 0.6));\n" +
+  "    float diff = max(dot(n, L), 0.0);\n" +
+  "    // 環境光 0.05 ＋ 拡散光。ここまではリニアな値\n" +
+  "    col = vec3(1.0, 0.5, 0.2) * (0.05 + 0.95 * diff);\n" +
+  "  }\n";
+
+const CELL_POINT_FN =
+  "// マス i に置く点の位置（マスの中の 0〜1）\n" +
+  "vec2 cellPoint(vec2 i) {\n" +
+  "  return vec2(random(i), random(i + vec2(57.0, 113.0)));\n" +
+  "}\n\n";
+
+const VORONOI_HEAD =
+  "void main() {\n" +
+  "  vec2 st = gl_FragCoord.xy / u_resolution;\n" +
+  "  vec2 pos = st * 5.0;\n" +
+  "  vec2 i = floor(pos);\n" +
+  "  vec2 f = fract(pos);\n" +
+  "  float m = 1.0;  // いちばん近い点までの距離\n";
+
 export const glslTracks: readonly Track[] = [
   {
     id: "glsl-basics",
@@ -598,6 +706,117 @@ export const glslTracks: readonly Track[] = [
     ],
   },
   {
+    id: "glsl-transform",
+    domain: "glsl",
+    title: "座標を変換する",
+    summary: "回転行列 mat2 で座標ごと回す。回したい中心を原点に移してから回すのがコツ。",
+    icon: "🔄",
+    lessons: [
+      {
+        id: "glsl-rotate",
+        title: "回転させる: mat2",
+        explanation:
+          "<p>図形そのものを回す関数はありません。代わりに<b>座標を回します</b>。2D の回転行列 " +
+          "<code>mat2(c, -s, s, c)</code>（<code>c = cos(a)</code>、<code>s = sin(a)</code>）を座標 <code>p</code> に" +
+          "掛けた <code>q</code> で図形を描くと、図形が角度 <code>a</code> だけ反時計回りに回って見えます。" +
+          "角度はラジアンで、45° は <code>π / 4 ≈ 0.785</code>。<code>a</code> に <code>u_time</code> を入れれば回り続けます。</p>",
+        challenge: {
+          starterCode: sh(
+            SDBOX_FN +
+              ROTATE_FN +
+              "void main() {\n" +
+              CENTRED +
+              "  vec2 q = p;\n" +
+              "  float d = sdBox(q, vec2(0.4));\n" +
+              "  float c = 1.0 - step(0.0, d);\n" +
+              "  gl_FragColor = vec4(vec3(c), 1.0);\n}",
+          ),
+          task: "q を rotate2d(0.785) * p にして、正方形を 45° 回したひし形にしよう。",
+          validators: [
+            { kind: "compiles" },
+            // The helper is declared above main(), so require the call inside it.
+            { kind: "sourceMatches", pattern: "main[\\s\\S]*rotate2d\\s*\\(" },
+            { kind: "pixelApprox", x: 0.48, y: 0.48, rgb: WHITE },
+            // The diamond's tips reach past the square's sides…
+            { kind: "pixelApprox", x: 0.73, y: 0.48, rgb: WHITE },
+            { kind: "pixelApprox", x: 0.27, y: 0.48, rgb: WHITE },
+            { kind: "pixelApprox", x: 0.48, y: 0.73, rgb: WHITE },
+            { kind: "pixelApprox", x: 0.48, y: 0.27, rgb: WHITE },
+            // …while the square's corners are cut away.
+            { kind: "pixelApprox", x: 0.69, y: 0.69, rgb: BLACK },
+            { kind: "pixelApprox", x: 0.31, y: 0.31, rgb: BLACK },
+            { kind: "pixelApprox", x: 0.69, y: 0.31, rgb: BLACK },
+            { kind: "pixelApprox", x: 0.31, y: 0.69, rgb: BLACK },
+          ],
+          hints: [
+            "vec2 q = rotate2d(0.785) * p;",
+            "行列 × ベクトルの順に掛けます。0.785 を u_time にすると回り続けます",
+          ],
+          solution: sh(
+            SDBOX_FN +
+              ROTATE_FN +
+              "void main() {\n" +
+              CENTRED +
+              "  vec2 q = rotate2d(0.785) * p;\n" +
+              "  float d = sdBox(q, vec2(0.4));\n" +
+              "  float c = 1.0 - step(0.0, d);\n" +
+              "  gl_FragColor = vec4(vec3(c), 1.0);\n}",
+          ),
+        },
+      },
+      {
+        id: "glsl-rotate-tiles",
+        title: "マスごとに回す: 中心を原点に",
+        explanation:
+          "<p>回転行列は<b>原点 (0, 0) を中心に</b>回します。<code>fract(st * 3.0)</code> で作ったマスの座標 " +
+          "<code>g</code> は左下の角が原点なので、そのまま回すと図形はマスの<b>角を中心に</b>回ってしまいます。" +
+          "先に <code>g - 0.5</code> でマスの中心を原点に移してから回すのがコツです（「移動してから回転」の順番）。</p>",
+        challenge: {
+          starterCode: sh(
+            SDBOX_FN +
+              ROTATE_FN +
+              "void main() {\n" +
+              "  vec2 st = gl_FragCoord.xy / u_resolution;\n" +
+              "  vec2 g = fract(st * 3.0);           // マスごとの 0〜1 の座標\n" +
+              "  vec2 q = rotate2d(0.785) * g;       // いまはマスの左下の角を中心に回っている\n" +
+              "  float d = sdBox(q, vec2(0.2));\n" +
+              "  float c = 1.0 - step(0.0, d);\n" +
+              "  gl_FragColor = vec4(vec3(c), 1.0);\n}",
+          ),
+          task: "回す前にマスの中心を原点に移して（g - 0.5）、3×3 のマスそれぞれの真ん中にひし形を並べよう。",
+          validators: [
+            { kind: "compiles" },
+            { kind: "sourceMatches", pattern: "main[\\s\\S]*rotate2d\\s*\\(" },
+            // A diamond in the middle of every tile…
+            { kind: "pixelApprox", x: 0.48, y: 0.48, rgb: WHITE },
+            { kind: "pixelApprox", x: 0.15, y: 0.15, rgb: WHITE },
+            { kind: "pixelApprox", x: 0.85, y: 0.85, rgb: WHITE },
+            { kind: "pixelApprox", x: 0.15, y: 0.85, rgb: WHITE },
+            { kind: "pixelApprox", x: 0.85, y: 0.15, rgb: WHITE },
+            // …and nothing at the tile corners or between the tiles.
+            { kind: "pixelApprox", x: 0.31, y: 0.31, rgb: BLACK },
+            { kind: "pixelApprox", x: 0.69, y: 0.48, rgb: BLACK },
+          ],
+          hints: [
+            "vec2 q = rotate2d(0.785) * (g - 0.5);",
+            "g - 0.5 でマスの中心が (0, 0) になり、そこを中心に回ります",
+          ],
+          solution: sh(
+            SDBOX_FN +
+              ROTATE_FN +
+              "void main() {\n" +
+              "  vec2 st = gl_FragCoord.xy / u_resolution;\n" +
+              "  vec2 g = fract(st * 3.0);\n" +
+              "  vec2 q = rotate2d(0.785) * (g - 0.5);\n" +
+              "  float d = sdBox(q, vec2(0.2));\n" +
+              "  float c = 1.0 - step(0.0, d);\n" +
+              "  gl_FragColor = vec4(vec3(c), 1.0);\n}",
+          ),
+        },
+      },
+    ],
+  },
+  {
     id: "glsl-polar",
     domain: "glsl",
     title: "極座標",
@@ -684,7 +903,7 @@ export const glslTracks: readonly Track[] = [
     id: "glsl-noise",
     domain: "glsl",
     title: "乱数とノイズ",
-    summary: "GLSL に乱数関数はない。ハッシュで乱数を作り、補間してなめらかなノイズにする。",
+    summary: "GLSL に乱数関数はない。ハッシュで乱数を作り、なめらかなノイズや細胞の模様にする。",
     icon: "🌫️",
     lessons: [
       {
@@ -776,13 +995,63 @@ export const glslTracks: readonly Track[] = [
           ),
         },
       },
+      {
+        id: "glsl-voronoi",
+        title: "細胞の模様: セルラーノイズ",
+        explanation:
+          "<p><b>セルラーノイズ</b>（ボロノイ）は、マスごとに乱数で点を 1つ置き、各ピクセルで" +
+          "<b>いちばん近い点までの距離</b>を明るさにする模様です。細胞や石畳のように見えます。" +
+          "自分のマスの点だけを調べると、となりのマスの点のほうが近い場所で、マスの境目に段差ができてしまいます。" +
+          "<code>for</code> ループで<b>まわり 3×3 マス</b>の点を調べ、<code>min</code> でいちばん近い距離を残しましょう。</p>",
+        challenge: {
+          starterCode: shHigh(
+            RANDOM_FN +
+              CELL_POINT_FN +
+              VORONOI_HEAD +
+              "  // いまは自分のマスの点しか見ていない\n" +
+              "  m = min(m, distance(f, cellPoint(i)));\n" +
+              "  gl_FragColor = vec4(vec3(m), 1.0);\n}",
+          ),
+          task: "for ループでまわり 3×3 マスの点までの距離を調べ、いちばん近い距離 m で塗って、マスの境目の段差を消そう。",
+          validators: [
+            { kind: "compiles" },
+            { kind: "sourceMatches", pattern: "for\\s*\\(" },
+            { kind: "notUniform" },
+            // The nearest-point distance changes no faster than the position
+            // (≤ 0.24 between neighbouring samples), whatever the hash returns;
+            // looking at one cell only leaves jumps at every cell border.
+            {
+              kind: "smooth",
+              maxStep: 0.3,
+              message: "マスの境目で明るさが急に変わっています。となりのマスの点も調べましょう",
+            },
+          ],
+          hints: [
+            "for (int y = -1; y <= 1; y++) { for (int x = -1; x <= 1; x++) { … } }",
+            "vec2 nb = vec2(float(x), float(y));  // となりのマスへのずれ",
+            "m = min(m, distance(f, nb + cellPoint(i + nb)));",
+          ],
+          solution: shHigh(
+            RANDOM_FN +
+              CELL_POINT_FN +
+              VORONOI_HEAD +
+              "  for (int y = -1; y <= 1; y++) {\n" +
+              "    for (int x = -1; x <= 1; x++) {\n" +
+              "      vec2 nb = vec2(float(x), float(y));\n" +
+              "      m = min(m, distance(f, nb + cellPoint(i + nb)));\n" +
+              "    }\n" +
+              "  }\n" +
+              "  gl_FragColor = vec4(vec3(m), 1.0);\n}",
+          ),
+        },
+      },
     ],
   },
   {
     id: "glsl-post",
     domain: "glsl",
     title: "仕上げのエフェクト",
-    summary: "ビネットや色ずれなど、できた絵に後からかける「ポストエフェクト」の考え方。",
+    summary: "ビネット・色ずれ・トーンマッピング・ガンマ補正。できた絵に後からかける仕上げの処理。",
     icon: "📷",
     lessons: [
       {
@@ -869,13 +1138,91 @@ export const glslTracks: readonly Track[] = [
           ),
         },
       },
+      {
+        id: "glsl-tonemap",
+        title: "明るすぎる光を収める: トーンマッピング",
+        explanation:
+          "<p>現実の光は、画面が出せる 0〜1 をかんたんに超えます（<b>HDR</b>）。1.0 を超えた分をそのまま出すと" +
+          "白に張り付いて（クリップして）、色も明るさの差も消えてしまいます。<b>トーンマッピング</b>は、" +
+          "0〜∞ の明るさを 0〜1 に押し縮める変換です。いちばん簡単な <b>Reinhard</b> は " +
+          "<code>col / (1.0 + col)</code>。暗い所はほぼそのまま、明るい所ほど強く縮むので、白く飛ばずに済みます。</p>",
+        challenge: {
+          starterCode: sh(
+            "void main() {\n" +
+              "  vec2 st = gl_FragCoord.xy / u_resolution;\n" +
+              "  // 右へ行くほど強くなるオレンジの光。右端では 1.0 の 8倍（HDR）\n" +
+              "  vec3 hdr = vec3(1.0, 0.6, 0.3) * st.x * 8.0;\n" +
+              "  vec3 col = hdr;\n" +
+              "  gl_FragColor = vec4(col, 1.0);\n}",
+          ),
+          task: "col を Reinhard トーンマッピング（hdr / (1.0 + hdr)）にして、右側が白く飛ばずオレンジの濃淡が残るようにしよう。",
+          validators: [
+            { kind: "compiles" },
+            { kind: "pixelApprox", x: 0.23, y: 0.48, rgb: [0.65, 0.53, 0.36] },
+            { kind: "pixelApprox", x: 0.48, y: 0.48, rgb: [0.79, 0.7, 0.54] },
+            { kind: "pixelApprox", x: 0.77, y: 0.48, rgb: [0.86, 0.79, 0.65] },
+          ],
+          hints: [
+            "vec3 col = hdr / (1.0 + hdr);",
+            "1.0 + hdr のように float と vec3 を足すと、各成分に足されます",
+          ],
+          solution: sh(
+            "void main() {\n" +
+              "  vec2 st = gl_FragCoord.xy / u_resolution;\n" +
+              "  vec3 hdr = vec3(1.0, 0.6, 0.3) * st.x * 8.0;\n" +
+              "  vec3 col = hdr / (1.0 + hdr);\n" +
+              "  gl_FragColor = vec4(col, 1.0);\n}",
+          ),
+        },
+      },
+      {
+        id: "glsl-gamma",
+        title: "ガンマ補正: リニアから画面の色へ",
+        explanation:
+          "<p>シェーダーで計算する明るさ（光の足し算や <code>dot(n, L)</code>）は、光の量に比例する<b>リニア</b>な値です。" +
+          "ところが画面は、受け取った値をおよそ 2.2 乗して表示するため、中間の明るさが暗く沈みます。" +
+          "そこで最後に <code>pow(col, vec3(1.0 / 2.2))</code> で逆向きに持ち上げておくと、計算どおりの明るさに見えます。" +
+          "これが<b>ガンマ補正</b>で、陰影のグラデーションがやわらかくなります。</p>",
+        challenge: {
+          starterCode: sh(
+            "void main() {\n" +
+              CENTRED +
+              GAMMA_SPHERE +
+              "  // 画面に出す直前に、ここでガンマ補正しよう\n" +
+              "  gl_FragColor = vec4(col, 1.0);\n}",
+          ),
+          task: "画面に出す直前に col を pow(col, vec3(1.0 / 2.2)) でガンマ補正して、球の暗い側を持ち上げよう。",
+          validators: [
+            { kind: "compiles" },
+            { kind: "sourceMatches", pattern: "pow" },
+            // Lit side, middle and unlit side (ambient only) of the sphere, in
+            // three regions so each failure names a different place; the
+            // background stays black.
+            { kind: "pixelApprox", x: 0.31, y: 0.69, rgb: [1, 0.73, 0.48] },
+            { kind: "pixelApprox", x: 0.48, y: 0.48, rgb: [0.81, 0.59, 0.39] },
+            { kind: "pixelApprox", x: 0.69, y: 0.31, rgb: [0.26, 0.19, 0.12] },
+            { kind: "pixelApprox", x: 0.04, y: 0.04, rgb: BLACK },
+          ],
+          hints: [
+            "col = pow(col, vec3(1.0 / 2.2));",
+            "gl_FragColor に入れる直前に 1回だけかけます",
+          ],
+          solution: sh(
+            "void main() {\n" +
+              CENTRED +
+              GAMMA_SPHERE +
+              "  col = pow(col, vec3(1.0 / 2.2));\n" +
+              "  gl_FragColor = vec4(col, 1.0);\n}",
+          ),
+        },
+      },
     ],
   },
   {
     id: "glsl-advanced",
     domain: "glsl",
     title: "上級: 光を当てる",
-    summary: "法線とライト方向の内積で陰影をつけ、レイマーチングで本物の 3D の球を描く。",
+    summary: "法線とライト方向の内積で陰影をつけ、レイマーチングで本物の 3D の球を描き、影まで落とす。",
     icon: "🪐",
     lessons: [
       {
@@ -985,6 +1332,109 @@ export const glslTracks: readonly Track[] = [
               "    t += d;\n" +
               "  }\n" +
               "  gl_FragColor = vec4(col, 1.0);\n}",
+          ),
+        },
+      },
+      {
+        id: "glsl-raymarch-normal",
+        title: "どんな形にも法線を: 距離の勾配",
+        explanation:
+          "<p>前のレッスンの法線 <code>normalize(p)</code> は「原点にある球」専用です。床を足すと、床まで球の向きで" +
+          "照らされて陰影が壊れます。どんな SDF にも使える法線は、距離 <code>map</code> の<b>勾配</b>" +
+          "（距離がいちばん増える向き）です。点を x・y・z 方向に少しだけ（<code>e</code>）前後にずらして " +
+          "<code>map</code> の差をとり、3つ並べて正規化します。<code>e.xyy</code> は " +
+          "<code>vec3(e.x, e.y, e.y)</code>、つまり x 方向だけのずれを表す書き方です。</p>",
+        challenge: {
+          starterCode: shHigh(
+            RM_MAP_FN +
+              "// 距離 map の勾配＝面の向き（法線）。各軸に e だけ前後にずらした差を並べる\n" +
+              "vec3 calcNormal(vec3 p) {\n" +
+              "  vec2 e = vec2(0.001, 0.0);\n" +
+              "  float dx = map(p + e.xyy) - map(p - e.xyy);\n" +
+              "  float dy = 0.0;  // y 方向にずらした差\n" +
+              "  float dz = 0.0;  // z 方向にずらした差\n" +
+              "  return normalize(vec3(dx, dy, dz));\n" +
+              "}\n\n" +
+              rmMain(
+                "      vec3 n = normalize(p);  // 球専用の法線。床では向きがおかしい\n" +
+                  "      vec3 L = normalize(vec3(0.6, 0.7, 0.8));\n" +
+                  "      col = vec3(max(dot(n, L), 0.0));\n",
+              ),
+          ),
+          task: "calcNormal の dy・dz を dx と同じ形で埋め、当たった点の法線 n を calcNormal(p) に替えて、床にも正しい陰影をつけよう。",
+          validators: [
+            { kind: "compiles" },
+            // calcNormal is declared above main(), so require the call inside it.
+            { kind: "sourceMatches", pattern: "main[\\s\\S]*calcNormal\\s*\\(" },
+            // The floor faces straight up, so it is evenly lit everywhere…
+            { kind: "pixelApprox", x: 0.1, y: 0.06, rgb: [0.57, 0.57, 0.57] },
+            { kind: "pixelApprox", x: 0.48, y: 0.02, rgb: [0.57, 0.57, 0.57] },
+            { kind: "pixelApprox", x: 0.9, y: 0.06, rgb: [0.57, 0.57, 0.57] },
+            // …and the sphere keeps its shading.
+            { kind: "pixelApprox", x: 0.48, y: 0.48, rgb: [0.6, 0.6, 0.6] },
+            { kind: "pixelApprox", x: 0.65, y: 0.65, rgb: [0.98, 0.98, 0.98] },
+            { kind: "regionColor", rect: [0, 0.88, 0.12, 1], rgb: SKY },
+            { kind: "regionColor", rect: [0.88, 0.88, 1, 1], rgb: SKY },
+          ],
+          hints: [
+            "float dy = map(p + e.yxy) - map(p - e.yxy);  // dz は e.yyx で",
+            "vec3 n = calcNormal(p);",
+          ],
+          solution: shHigh(
+            RM_MAP_FN +
+              RM_NORMAL_FN +
+              rmMain(
+                "      vec3 n = calcNormal(p);\n" +
+                  "      vec3 L = normalize(vec3(0.6, 0.7, 0.8));\n" +
+                  "      col = vec3(max(dot(n, L), 0.0));\n",
+              ),
+          ),
+        },
+      },
+      {
+        id: "glsl-raymarch-shadow",
+        title: "影を落とす: 光に向かってもう一度",
+        explanation:
+          "<p>レイマーチングでは影も同じ方法で作れます。面に当たった点から<b>光の方向へもう一度レイを進め</b>、" +
+          "途中で何か（距離がほぼ 0 の所）にぶつかったら、そこは光が遮られた<b>影</b>です。" +
+          "自分の面にすぐぶつからないよう、出発点は法線の向きに少し浮かせ（<code>p + n * 0.01</code>）、" +
+          "少し進んだ所から調べ始めます。ぶつかりそうになった近さを <code>min(res, 8.0 * h / t)</code> のように" +
+          "濃さへ反映すると、ふちのぼけた<b>ソフトシャドウ</b>にもできます。</p>",
+        challenge: {
+          starterCode: shHigh(
+            RM_MAP_FN +
+              RM_NORMAL_FN +
+              rmShadowFn("    // ここで、h がとても小さければ（何かに当たった）0.0 を返そう\n") +
+              rmMain(RM_SHADOW_HIT),
+          ),
+          task: "shadow 関数のループの中で、h が 0.001 より小さくなったら 0.0 を返して、床に球の影を落とそう。",
+          validators: [
+            { kind: "compiles" },
+            // The shadow stretches across the floor to the right of the sphere
+            // (deep in it for hard and soft shadows alike)…
+            {
+              kind: "pixelApprox",
+              x: 0.85,
+              y: 0.31,
+              rgb: [0.08, 0.08, 0.08],
+              message: "球の右側の床に影が落ちていません。光へ進めたレイが球に当たったら 0.0 を返しましょう",
+            },
+            // …while the rest of the floor and the sphere stay lit.
+            { kind: "pixelApprox", x: 0.15, y: 0.31, rgb: [0.61, 0.61, 0.61] },
+            { kind: "pixelApprox", x: 0.48, y: 0.06, rgb: [0.61, 0.61, 0.61] },
+            { kind: "pixelApprox", x: 0.9, y: 0.06, rgb: [0.61, 0.61, 0.61] },
+            { kind: "pixelApprox", x: 0.35, y: 0.65, rgb: [0.82, 0.82, 0.82] },
+            { kind: "regionColor", rect: [0.88, 0.88, 1, 1], rgb: SKY },
+          ],
+          hints: [
+            "if (h < 0.001) return 0.0;",
+            "return でその場で関数を抜けます。最後まで何にも当たらなければ、下の return 1.0 まで進みます",
+          ],
+          solution: shHigh(
+            RM_MAP_FN +
+              RM_NORMAL_FN +
+              rmShadowFn("    if (h < 0.001) return 0.0;\n") +
+              rmMain(RM_SHADOW_HIT),
           ),
         },
       },

@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getByLabelText, getByRole, getByText, queryByRole, queryByText } from "@testing-library/dom";
 import userEvent, { type UserEvent } from "@testing-library/user-event";
 import { LESSONS, lessonById } from "./engine/content/index.js";
+import { evaluate } from "./engine/validate/run.js";
 import type { SceneSnapshot, ShaderSnapshot } from "./engine/validate/snapshot.js";
 import { toGridSamples } from "./sandbox/sample-grid.js";
 
@@ -515,6 +516,22 @@ describe("next lesson", () => {
   });
 
   it("returns to the catalogue from the last lesson and says so", async () => {
+    // The last lesson (shadows) is judged on a rendered frame — a lit floor at
+    // the bottom with a dark shadow above it — and on the lights in the scene,
+    // which the generic fake does not produce. Hand it a frame that does.
+    const lastLessonFrame = (code: string): SceneSnapshot => {
+      const base = fakeSceneSnapshot(code);
+      const types = [...code.matchAll(/new THREE\.(\w+)\(/g)].map((m) => m[1]);
+      const px = new Uint8Array(16 * 16 * 4);
+      for (let i = 0; i < 16 * 16; i++) px.set(Math.floor(i / 16) < 5 ? [255, 255, 255, 255] : [0, 0, 0, 255], i * 4);
+      return {
+        ...base,
+        objects: types.map((type, i) => ({ ...base.objects[0], id: `o${i}`, type })),
+        samples: toGridSamples(px, 16, 16, 16),
+      };
+    };
+    expect(evaluate(LAST.challenge.validators, lastLessonFrame(LAST.challenge.solution)).passed).toBe(true);
+    sandbox.run.mockImplementation(async (code) => lastLessonFrame(code));
     await app.open(LAST.id);
     await pass();
     await user.click($btn("レッスン一覧へ"));

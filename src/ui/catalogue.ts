@@ -16,12 +16,12 @@ const SECTIONS: ReadonlyArray<{ domain: Domain; title: string; blurb: string }> 
   {
     domain: "glsl",
     title: "WebGL · GLSL シェーダー",
-    blurb: "1ピクセルずつ色を計算する。座標・図形・色・時間でフラグメントシェーダーを描く。",
+    blurb: "1ピクセルずつ色を計算する。座標・図形・色・時間から、距離関数・ノイズ・レイマーチングまで。",
   },
   {
     domain: "three",
     title: "Three.js · 3D シーン",
-    blurb: "ジオメトリ・マテリアル・ライト・カメラを組み立てて立体を描く。",
+    blurb: "ジオメトリ・マテリアル・ライト・カメラを組み立てて立体を描き、霧や影で仕上げる。",
   },
 ];
 

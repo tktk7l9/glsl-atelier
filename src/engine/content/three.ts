@@ -1,9 +1,15 @@
 // Three.js scene tracks. The learner writes JS with `THREE`, `scene`, `camera`
-// in scope. The sandbox runs it in an isolated iframe, traverses the resulting
-// scene graph, renders one frame, and reads it back for the validators. The
-// default camera sits at (0, 0, 5) looking at the origin.
+// and `renderer` in scope. The sandbox runs it in an isolated iframe, traverses
+// the resulting scene graph, renders one frame, and reads it back for the
+// validators. The default camera sits at (0, 0, 5) looking at the origin with a
+// 60° vertical field of view; the preview can be any aspect ratio, so pixel
+// checks on rendered scenes stay on the vertical centre line (x = 0.5), where
+// the position depends only on the (fixed) vertical field of view.
 
 import type { Track } from "./types.js";
+
+/** The sandbox clear colour (#05060d) as the validators see it. */
+const BACKGROUND: [number, number, number] = [0.02, 0.024, 0.051];
 
 export const threeTracks: readonly Track[] = [
   {
@@ -242,6 +248,114 @@ export const threeTracks: readonly Track[] = [
             "scene.add(mesh);\n",
         },
       },
+      {
+        id: "three-transparent",
+        title: "半透明: transparent と opacity",
+        explanation:
+          "<p><code>opacity</code> は 0（透明）〜1（不透明）の不透明度です。ただし <b><code>transparent: true</code> も" +
+          "いっしょに指定しないと無視されます</b>。半透明のオブジェクトは、不透明なものを描き終えたあとに" +
+          "奥から順に描かれ、奥の色と混ざります。</p>",
+        challenge: {
+          starterCode:
+            "// 奥の赤い板\n" +
+            "const back = new THREE.Mesh(\n" +
+            "  new THREE.PlaneGeometry(4, 4),\n" +
+            "  new THREE.MeshBasicMaterial({ color: 'red' }),\n" +
+            ");\n" +
+            "back.position.z = -1;\n" +
+            "scene.add(back);\n\n" +
+            "// 手前の青い板（いまは不透明で、奥の板を隠している）\n" +
+            "const front = new THREE.Mesh(\n" +
+            "  new THREE.PlaneGeometry(2, 2),\n" +
+            "  new THREE.MeshBasicMaterial({ color: 'blue' }),\n" +
+            ");\n" +
+            "scene.add(front);\n",
+          task: "手前の青い板を不透明度 0.5 の半透明にして、奥の赤い板が透けて見えるようにしよう。",
+          validators: [
+            { kind: "noError" },
+            { kind: "sourceMatches", pattern: "transparent" },
+            { kind: "sourceMatches", pattern: "opacity" },
+            { kind: "sceneHas", type: "Mesh", min: 2 },
+            { kind: "pixelApprox", x: 0.5, y: 0.5, rgb: [0.5, 0, 0.5], tol: 0.2 },
+          ],
+          hints: [
+            "new THREE.MeshBasicMaterial({ color: 'blue', transparent: true, opacity: 0.5 })",
+            "opacity だけ変えても透けません。transparent: true を忘れずに",
+          ],
+          solution:
+            "const back = new THREE.Mesh(\n" +
+            "  new THREE.PlaneGeometry(4, 4),\n" +
+            "  new THREE.MeshBasicMaterial({ color: 'red' }),\n" +
+            ");\n" +
+            "back.position.z = -1;\n" +
+            "scene.add(back);\n" +
+            "const front = new THREE.Mesh(\n" +
+            "  new THREE.PlaneGeometry(2, 2),\n" +
+            "  new THREE.MeshBasicMaterial({ color: 'blue', transparent: true, opacity: 0.5 }),\n" +
+            ");\n" +
+            "scene.add(front);\n",
+        },
+      },
+      {
+        id: "three-shader-material",
+        title: "自作シェーダー: ShaderMaterial",
+        explanation:
+          "<p><code>ShaderMaterial</code> を使うと、GLSL トラックで書いたようなシェーダーをメッシュに貼れます。" +
+          "頂点シェーダーでは Three.js が用意する <code>projectionMatrix</code>・<code>modelViewMatrix</code>・" +
+          "<code>position</code> が使えます。JS 側の値は <code>uniforms: { 名前: { value } }</code> で渡し、" +
+          "GLSL 側で <code>uniform</code> として受け取ります。</p>",
+        challenge: {
+          starterCode:
+            "const vertexShader = `\n" +
+            "  void main() {\n" +
+            "    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);\n" +
+            "  }\n" +
+            "`;\n" +
+            "const fragmentShader = `\n" +
+            "  uniform vec3 uColor;\n" +
+            "  void main() {\n" +
+            "    gl_FragColor = vec4(uColor, 1.0);\n" +
+            "  }\n" +
+            "`;\n\n" +
+            "const geo = new THREE.SphereGeometry(1.5, 32, 16);\n" +
+            "// ここを ShaderMaterial に変えよう\n" +
+            "const mat = new THREE.MeshBasicMaterial({ color: 'white' });\n" +
+            "const mesh = new THREE.Mesh(geo, mat);\n" +
+            "scene.add(mesh);\n",
+          task: "マテリアルを上の 2つのシェーダーを使う ShaderMaterial に変え、uniforms で uColor にシアン (0, 1, 1) を渡そう。",
+          validators: [
+            { kind: "noError" },
+            { kind: "sourceMatches", pattern: "ShaderMaterial" },
+            { kind: "sourceMatches", pattern: "uniforms" },
+            { kind: "materialOf", material: "ShaderMaterial" },
+            { kind: "pixelApprox", x: 0.5, y: 0.5, rgb: [0, 1, 1], tol: 0.15 },
+          ],
+          hints: [
+            "new THREE.ShaderMaterial({ uniforms: { uColor: { value: new THREE.Color(0, 1, 1) } }, vertexShader, fragmentShader })",
+            "uniforms を渡し忘れると uColor は (0, 0, 0) ＝ 黒になります",
+          ],
+          solution:
+            "const vertexShader = `\n" +
+            "  void main() {\n" +
+            "    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);\n" +
+            "  }\n" +
+            "`;\n" +
+            "const fragmentShader = `\n" +
+            "  uniform vec3 uColor;\n" +
+            "  void main() {\n" +
+            "    gl_FragColor = vec4(uColor, 1.0);\n" +
+            "  }\n" +
+            "`;\n" +
+            "const geo = new THREE.SphereGeometry(1.5, 32, 16);\n" +
+            "const mat = new THREE.ShaderMaterial({\n" +
+            "  uniforms: { uColor: { value: new THREE.Color(0, 1, 1) } },\n" +
+            "  vertexShader,\n" +
+            "  fragmentShader,\n" +
+            "});\n" +
+            "const mesh = new THREE.Mesh(geo, mat);\n" +
+            "scene.add(mesh);\n",
+        },
+      },
     ],
   },
   {
@@ -318,7 +432,7 @@ export const threeTracks: readonly Track[] = [
     id: "three-transform",
     domain: "three",
     title: "変形とグループ",
-    summary: "拡大縮小と、Group でまとめて扱う。",
+    summary: "拡大縮小、Group でまとめる、InstancedMesh で同じ形をたくさん描く。",
     icon: "🔧",
     lessons: [
       {
@@ -337,6 +451,7 @@ export const threeTracks: readonly Track[] = [
             { kind: "noError" },
             { kind: "sourceMatches", pattern: "scale" },
             { kind: "sceneHas", type: "Mesh" },
+            { kind: "scaleApprox", scale: [2, 2, 2], type: "Mesh" },
             { kind: "rendersNonEmpty" },
           ],
           hints: ["cube.scale.set(2, 2, 2);", "1.0 が等倍、2.0 で2倍"],
@@ -377,6 +492,51 @@ export const threeTracks: readonly Track[] = [
             "b.position.x = 1;\n" +
             "group.add(a, b);\n" +
             "scene.add(group);\n",
+        },
+      },
+      {
+        id: "three-instanced",
+        title: "大量に並べる: InstancedMesh",
+        explanation:
+          "<p>同じ形を何百個も置くなら、Mesh を増やすより <code>InstancedMesh(geo, mat, 個数)</code> が" +
+          "軽くて速い（1回の描画命令でまとめて描く）。各コピーの位置・回転・大きさは " +
+          "<code>Matrix4</code> で表し、<code>setMatrixAt(番号, 行列)</code> で渡します。" +
+          "<code>m.setPosition(x, y, z)</code> で行列の位置だけを書き換えられます。</p>",
+        challenge: {
+          starterCode:
+            "const geo = new THREE.BoxGeometry(2, 0.6, 0.6);\n" +
+            "const mat = new THREE.MeshBasicMaterial({ color: 'orange' });\n\n" +
+            "// 同じ板を 5枚まとめて描く InstancedMesh（いまは 5枚とも原点に重なっている）\n" +
+            "const rungs = new THREE.InstancedMesh(geo, mat, 5);\n" +
+            "scene.add(rungs);\n\n" +
+            "const m = new THREE.Matrix4();\n" +
+            "for (let i = 0; i < 5; i++) {\n" +
+            "  // i 番目の板を y = i - 2 の高さに置こう\n" +
+            "}\n",
+          task: "ループの中で i 番目の板を y = i - 2 の高さに置いて、はしごのように 5枚並べよう。",
+          validators: [
+            { kind: "noError" },
+            { kind: "sourceMatches", pattern: "setMatrixAt" },
+            { kind: "instanced", min: 5 },
+            { kind: "pixelApprox", x: 0.5, y: 0.5, rgb: [1, 0.65, 0], tol: 0.15 },
+            { kind: "pixelApprox", x: 0.5, y: 0.66, rgb: [1, 0.65, 0], tol: 0.15 },
+            { kind: "pixelApprox", x: 0.5, y: 0.34, rgb: [1, 0.65, 0], tol: 0.15 },
+            { kind: "pixelApprox", x: 0.5, y: 0.84, rgb: [1, 0.65, 0], tol: 0.15 },
+            { kind: "pixelApprox", x: 0.5, y: 0.16, rgb: [1, 0.65, 0], tol: 0.15 },
+            { kind: "pixelApprox", x: 0.5, y: 0.59, rgb: BACKGROUND, tol: 0.15 },
+            { kind: "pixelApprox", x: 0.5, y: 0.41, rgb: BACKGROUND, tol: 0.15 },
+          ],
+          hints: ["m.setPosition(0, i - 2, 0);", "rungs.setMatrixAt(i, m);"],
+          solution:
+            "const geo = new THREE.BoxGeometry(2, 0.6, 0.6);\n" +
+            "const mat = new THREE.MeshBasicMaterial({ color: 'orange' });\n" +
+            "const rungs = new THREE.InstancedMesh(geo, mat, 5);\n" +
+            "scene.add(rungs);\n" +
+            "const m = new THREE.Matrix4();\n" +
+            "for (let i = 0; i < 5; i++) {\n" +
+            "  m.setPosition(0, i - 2, 0);\n" +
+            "  rungs.setMatrixAt(i, m);\n" +
+            "}\n",
         },
       },
     ],
@@ -483,6 +643,122 @@ export const threeTracks: readonly Track[] = [
             "const cube = new THREE.Mesh(geo, mat);\n" +
             "scene.add(cube);\n" +
             "cube.rotation.y = 0.6;\n",
+        },
+      },
+    ],
+  },
+  {
+    id: "three-atmosphere",
+    domain: "three",
+    title: "空気感: 霧と影",
+    summary: "Fog で遠くをかすませ、影を落として、シーンに奥行きと接地感を出す。",
+    icon: "🌁",
+    lessons: [
+      {
+        id: "three-fog",
+        title: "遠くをかすませる: Fog",
+        explanation:
+          "<p><code>scene.fog = new THREE.Fog(色, near, far)</code> で、カメラから <code>near</code> より遠いものが" +
+          "だんだん霧の色に溶け、<code>far</code> で完全に霧の色になります。霧の色を背景色と同じにすると、" +
+          "遠くのものが闇に消えていくように見えます。</p>",
+        challenge: {
+          starterCode:
+            "// 奥へ長くのびる白い床\n" +
+            "const floor = new THREE.Mesh(\n" +
+            "  new THREE.PlaneGeometry(20, 34),\n" +
+            "  new THREE.MeshBasicMaterial({ color: 'white' }),\n" +
+            ");\n" +
+            "floor.rotation.x = -Math.PI / 2;\n" +
+            "floor.position.set(0, -1, -13);\n" +
+            "scene.add(floor);\n\n" +
+            "// ここで scene.fog を設定して、床の奥を闇に溶かそう\n",
+          task: "scene.fog に THREE.Fog（色 0x05060d・near 3・far 8）を設定して、床の奥が背景の闇に溶けるようにしよう。",
+          validators: [
+            { kind: "noError" },
+            { kind: "sourceMatches", pattern: "THREE\\.Fog" },
+            { kind: "sceneHas", type: "Mesh" },
+            { kind: "pixelApprox", x: 0.5, y: 0.03, rgb: [1, 1, 1], tol: 0.2 },
+            { kind: "pixelApprox", x: 0.5, y: 0.41, rgb: BACKGROUND, tol: 0.15 },
+          ],
+          hints: ["scene.fog = new THREE.Fog(0x05060d, 3, 8);", "0x05060d はこのプレビューの背景色です"],
+          solution:
+            "const floor = new THREE.Mesh(\n" +
+            "  new THREE.PlaneGeometry(20, 34),\n" +
+            "  new THREE.MeshBasicMaterial({ color: 'white' }),\n" +
+            ");\n" +
+            "floor.rotation.x = -Math.PI / 2;\n" +
+            "floor.position.set(0, -1, -13);\n" +
+            "scene.add(floor);\n" +
+            "scene.fog = new THREE.Fog(0x05060d, 3, 8);\n",
+        },
+      },
+      {
+        id: "three-shadow",
+        title: "影を落とす: castShadow と receiveShadow",
+        explanation:
+          "<p>Three.js の影は、何もしないと出ません。スイッチが 4つあります: " +
+          "<code>renderer.shadowMap.enabled = true</code>（影の計算を有効に）、" +
+          "ライトの <code>castShadow</code>（このライトが影を作る）、" +
+          "影を落とす側の <code>castShadow</code>、影を受ける側の <code>receiveShadow</code>。" +
+          "影を作れるのは DirectionalLight・SpotLight・PointLight です。</p>",
+        challenge: {
+          starterCode:
+            "camera.position.set(0, 6, 7);\n" +
+            "camera.lookAt(0, 0, 0);\n\n" +
+            "const floor = new THREE.Mesh(\n" +
+            "  new THREE.PlaneGeometry(14, 14),\n" +
+            "  new THREE.MeshStandardMaterial({ color: 'white' }),\n" +
+            ");\n" +
+            "floor.rotation.x = -Math.PI / 2;\n" +
+            "floor.position.y = -1;\n" +
+            "scene.add(floor);\n\n" +
+            "const ball = new THREE.Mesh(\n" +
+            "  new THREE.SphereGeometry(1, 32, 16),\n" +
+            "  new THREE.MeshStandardMaterial({ color: 'tomato' }),\n" +
+            ");\n" +
+            "ball.position.y = 1.5;\n" +
+            "scene.add(ball);\n\n" +
+            "const sun = new THREE.DirectionalLight(0xffffff, 3);\n" +
+            "sun.position.set(0, 8, 3);\n" +
+            "scene.add(sun);\n\n" +
+            "// 4つのスイッチを入れて、床に球の影を落とそう\n",
+          task: "renderer の shadowMap を有効にし、sun と ball を castShadow、floor を receiveShadow にして影を落とそう。",
+          validators: [
+            { kind: "noError" },
+            { kind: "sourceMatches", pattern: "shadowMap" },
+            { kind: "sourceMatches", pattern: "castShadow" },
+            { kind: "sourceMatches", pattern: "receiveShadow" },
+            { kind: "sceneHas", type: "DirectionalLight" },
+            { kind: "pixelApprox", x: 0.5, y: 0.16, rgb: [1, 1, 1], tol: 0.25 },
+            { kind: "pixelApprox", x: 0.5, y: 0.47, rgb: [0, 0, 0], tol: 0.25 },
+          ],
+          hints: [
+            "renderer.shadowMap.enabled = true;",
+            "sun.castShadow = true; ball.castShadow = true; floor.receiveShadow = true;",
+          ],
+          solution:
+            "camera.position.set(0, 6, 7);\n" +
+            "camera.lookAt(0, 0, 0);\n" +
+            "const floor = new THREE.Mesh(\n" +
+            "  new THREE.PlaneGeometry(14, 14),\n" +
+            "  new THREE.MeshStandardMaterial({ color: 'white' }),\n" +
+            ");\n" +
+            "floor.rotation.x = -Math.PI / 2;\n" +
+            "floor.position.y = -1;\n" +
+            "scene.add(floor);\n" +
+            "const ball = new THREE.Mesh(\n" +
+            "  new THREE.SphereGeometry(1, 32, 16),\n" +
+            "  new THREE.MeshStandardMaterial({ color: 'tomato' }),\n" +
+            ");\n" +
+            "ball.position.y = 1.5;\n" +
+            "scene.add(ball);\n" +
+            "const sun = new THREE.DirectionalLight(0xffffff, 3);\n" +
+            "sun.position.set(0, 8, 3);\n" +
+            "scene.add(sun);\n" +
+            "renderer.shadowMap.enabled = true;\n" +
+            "sun.castShadow = true;\n" +
+            "ball.castShadow = true;\n" +
+            "floor.receiveShadow = true;\n",
         },
       },
     ],

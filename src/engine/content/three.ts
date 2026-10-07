@@ -11,6 +11,112 @@ import type { Track } from "./types.js";
 /** The sandbox clear colour (#05060d) as the validators see it. */
 const BACKGROUND: [number, number, number] = [0.02, 0.024, 0.051];
 
+/** The clipping lesson, seen from a little above: a shell coloured by its
+ *  normals (both faces drawn, so the inside shows once it is cut) around an
+ *  orange core. */
+const CLIPPING_SCENE =
+  "// 少し上から見下ろすカメラ\n" +
+  "camera.position.set(0, 2.5, 4);\n" +
+  "camera.lookAt(0, 0, 0);\n\n" +
+  "// 殻（面の向きで色が変わるマテリアル。内側の面も描く）と、その中に隠れたオレンジの核\n" +
+  "const shell = new THREE.Mesh(\n" +
+  "  new THREE.SphereGeometry(1.5, 64, 32),\n" +
+  "  new THREE.MeshNormalMaterial({ side: THREE.DoubleSide }),\n" +
+  ");\n" +
+  "scene.add(shell);\n" +
+  "const core = new THREE.Mesh(\n" +
+  "  new THREE.SphereGeometry(0.7, 48, 24),\n" +
+  "  new THREE.MeshBasicMaterial({ color: 'orange' }),\n" +
+  ");\n" +
+  "scene.add(core);\n";
+
+const CLIPPING_TODO =
+  "// ① renderer の localClippingEnabled を true にしよう\n" +
+  "// ② 殻のマテリアルの clippingPlanes で、殻の上半分（y > 0）を切り取ろう\n";
+
+/** The spot-light lesson: a white wall and a spotlight 4 in front of it. */
+const SPOT_SCENE =
+  "// 正面の白い壁\n" +
+  "const wall = new THREE.Mesh(\n" +
+  "  new THREE.PlaneGeometry(14, 14),\n" +
+  "  new THREE.MeshStandardMaterial({ color: 'white' }),\n" +
+  ");\n" +
+  "scene.add(wall);\n\n" +
+  "// 壁の 4 手前から原点を照らすスポットライト\n" +
+  "const spot = new THREE.SpotLight(0xffffff, 40);\n" +
+  "spot.position.set(0, 0, 4);\n" +
+  "scene.add(spot);\n";
+
+/** The roughness lesson: a blue capsule lying on its side, lit from above.
+ *  A cylinder's highlight is a horizontal stripe, so the read-back samples on
+ *  the centre line find it at any preview width; this light puts the stripe
+ *  on the sample row at y = 0.59375 (within 0.2 px at 1264 px). */
+const ROUGHNESS_SCENE = (material: string): string =>
+  "// 横に寝かせた青いカプセル（半径 1、まっすぐな部分の長さ 2）\n" +
+  "const pill = new THREE.Mesh(\n" +
+  "  new THREE.CapsuleGeometry(1, 2, 16, 64),\n" +
+  `  new THREE.MeshStandardMaterial(${material}),\n` +
+  ");\n" +
+  "pill.rotation.z = Math.PI / 2;  // 横向きに\n" +
+  "scene.add(pill);\n\n" +
+  "// 手前の斜め上から照らす光\n" +
+  "const sun = new THREE.DirectionalLight(0xffffff, 3);\n" +
+  "sun.position.set(0, 2.5, 1.5);\n" +
+  "scene.add(sun);\n";
+
+/** The keyframe lesson; `keys` defines `times` and `values`. */
+const KEYFRAME_SCENE = (keys: string): string =>
+  "const ball = new THREE.Mesh(\n" +
+  "  new THREE.SphereGeometry(0.5, 32, 16),\n" +
+  "  new THREE.MeshBasicMaterial({ color: 'hotpink' }),\n" +
+  ");\n" +
+  "scene.add(ball);\n\n" +
+  "// 位置のキーフレーム: times[i] 秒に、values の i 番目の位置 (x, y, z) を通る\n" +
+  keys +
+  "const track = new THREE.VectorKeyframeTrack('.position', times, values);\n" +
+  "const clip = new THREE.AnimationClip('jump', 2, [track]);\n\n" +
+  "// クリップを再生して、1 秒進めた瞬間のポーズにする\n" +
+  "const mixer = new THREE.AnimationMixer(ball);\n" +
+  "mixer.clipAction(clip).play();\n" +
+  "mixer.update(1);\n";
+
+/** The texture-repeat lesson's 1×2 stripe texture. */
+const STRIPE_TEXTURE =
+  "// 縦 2 ピクセルの縞模様（下の段: 白、上の段: 空色）\n" +
+  "const data = new Uint8Array([\n" +
+  "  255, 255, 255, 255,  // 下の段: 白\n" +
+  "  0, 160, 255, 255,    // 上の段: 空色\n" +
+  "]);\n" +
+  "const tex = new THREE.DataTexture(data, 1, 2);\n" +
+  "tex.needsUpdate = true;\n";
+
+const STRIPE_BOARD =
+  "const board = new THREE.Mesh(\n" +
+  "  new THREE.PlaneGeometry(4, 4),\n" +
+  "  new THREE.MeshBasicMaterial({ map: tex }),\n" +
+  ");\n" +
+  "scene.add(board);\n";
+
+/** The stripe colours as drawn: the NoColorSpace texel 160/255 is linear. */
+const STRIPE_WHITE: [number, number, number] = [1, 1, 1];
+const STRIPE_SKY: [number, number, number] = [0, 0.81, 1];
+
+/** The CanvasTexture lesson's picture, drawn with Canvas 2D. */
+const CANVAS_DRAWING =
+  "// 64×64 の canvas に絵を描く（canvas の座標は左上が原点で、y は下向き）\n" +
+  "const canvas = document.createElement('canvas');\n" +
+  "canvas.width = 64;\n" +
+  "canvas.height = 64;\n" +
+  "const ctx = canvas.getContext('2d');\n" +
+  "ctx.fillStyle = 'skyblue';\n" +
+  "ctx.fillRect(0, 0, 64, 32);    // 上半分: 空\n" +
+  "ctx.fillStyle = 'seagreen';\n" +
+  "ctx.fillRect(0, 32, 64, 32);   // 下半分: 草原\n" +
+  "ctx.fillStyle = 'gold';\n" +
+  "ctx.fillRect(46, 6, 10, 10);   // 右上: 太陽\n" +
+  "ctx.fillStyle = 'tomato';\n" +
+  "ctx.fillRect(24, 20, 16, 16);  // まん中: 赤い家\n";
+
 export const threeTracks: readonly Track[] = [
   {
     id: "three-basics",
@@ -193,7 +299,7 @@ export const threeTracks: readonly Track[] = [
     id: "three-material",
     domain: "three",
     title: "マテリアル",
-    summary: "法線マテリアルやワイヤーフレームで質感を変える。",
+    summary: "法線マテリアル・ワイヤーフレーム・半透明・自作シェーダーで見た目を変え、clippingPlanes で断面を見せる。",
     icon: "🎨",
     lessons: [
       {
@@ -356,13 +462,64 @@ export const threeTracks: readonly Track[] = [
             "scene.add(mesh);\n",
         },
       },
+      {
+        id: "three-clipping",
+        title: "断面を見せる: clippingPlanes",
+        explanation:
+          "<p>マテリアルの <code>clippingPlanes</code> に平面（<code>THREE.Plane</code>）を渡すと、平面の<b>裏側</b>にある部分が" +
+          "描かれなくなり、隠れていた中身が見えます。<code>new THREE.Plane(法線, 距離)</code> は、法線が向いている側を残す平面です。" +
+          "この機能はふだんは止めてあるので、<code>renderer.localClippingEnabled = true</code> にしないと効きません。" +
+          "<code>side: THREE.DoubleSide</code> にしておくと、切り口から内側の面も見えます。</p>",
+        challenge: {
+          starterCode: CLIPPING_SCENE + "\n" + CLIPPING_TODO,
+          task:
+            "renderer.localClippingEnabled を true にし、殻のマテリアルの clippingPlanes に法線 (0, -1, 0)・距離 0 の平面を渡して、" +
+            "殻の上半分を切り取ろう。",
+          validators: [
+            { kind: "noError" },
+            { kind: "sourceMatches", pattern: "clippingPlanes\\s*[:=]" },
+            { kind: "sceneHas", type: "Mesh", min: 2 },
+            // Up the centre line (measured in headless Chrome at 1:1 and 16:9,
+            // and drawn the same by the ray-cast model in solvable.test.ts): the
+            // outside of the bowl that is left, the inside of the shell seen
+            // over its cut rim, the core, and nothing where the top half was.
+            {
+              kind: "pixelApprox",
+              x: 0.5,
+              y: 0.5,
+              rgb: [1, 0.65, 0],
+              tol: 0.15,
+              message:
+                "中の核が見えていません。renderer.localClippingEnabled = true にして、平面の法線を (0, -1, 0)（下向き）にしましょう",
+            },
+            {
+              kind: "pixelApprox",
+              x: 0.5,
+              y: 0.34,
+              rgb: [0.6, 0.85, 0.84],
+              tol: 0.15,
+              message: "切り口から殻の内側が見えていません。殻ごと消さずに、上半分だけを clippingPlanes で切り取りましょう",
+            },
+            { kind: "pixelApprox", x: 0.5, y: 0.28, rgb: [0.44, 0.2, 0.9], tol: 0.15 },
+            { kind: "pixelApprox", x: 0.5, y: 0.72, rgb: BACKGROUND, tol: 0.15 },
+          ],
+          hints: [
+            "renderer.localClippingEnabled = true;",
+            "shell.material.clippingPlanes = [new THREE.Plane(new THREE.Vector3(0, -1, 0), 0)];",
+          ],
+          solution:
+            CLIPPING_SCENE +
+            "renderer.localClippingEnabled = true;\n" +
+            "shell.material.clippingPlanes = [new THREE.Plane(new THREE.Vector3(0, -1, 0), 0)];\n",
+        },
+      },
     ],
   },
   {
     id: "three-light",
     domain: "three",
     title: "ライティング",
-    summary: "StandardMaterial は光が必要。環境光・平行光源・点光源で照らし、emissive で自ら光らせる。",
+    summary: "StandardMaterial は光が必要。環境光・平行光源・点光源・スポットライトで照らし、emissive で自ら光らせ、roughness でつやを出す。",
     icon: "💡",
     lessons: [
       {
@@ -470,6 +627,66 @@ export const threeTracks: readonly Track[] = [
         },
       },
       {
+        id: "three-spot-light",
+        title: "スポットライト: angle と penumbra",
+        explanation:
+          "<p><code>SpotLight</code> は舞台の照明のように、光を<b>円錐の形</b>に出します。<code>angle</code> は円錐の広がり" +
+          "（中心からふちまでの角度、ラジアン）で、小さいほど光の輪がしぼられます。<code>penumbra</code>（0〜1）は輪のふちの" +
+          "ぼかしで、0 だとくっきり、大きいほど内側からなめらかに暗くなります。光は <code>target</code>（初期値は原点）に向かいます。</p>",
+        challenge: {
+          starterCode:
+            SPOT_SCENE +
+            "\n// いまは円錐が広すぎて、壁全体が明るい。ここで spot.angle と spot.penumbra を設定しよう\n",
+          task: "spot.angle を Math.PI / 12（15°）にして光の輪をしぼり、spot.penumbra を 0.4 にして輪のふちをぼかそう。",
+          validators: [
+            { kind: "noError" },
+            { kind: "sceneHas", type: "SpotLight" },
+            {
+              kind: "sourceMatches",
+              pattern: "\\.angle\\s*=",
+              message: "spot.angle に円錐の広がり（Math.PI / 12）を代入しましょう",
+            },
+            {
+              kind: "sourceMatches",
+              pattern: "\\.penumbra\\s*=",
+              message: "spot.penumbra にふちのぼかし（0.4）を代入しましょう",
+            },
+            // Measured in headless Chrome at 1:1 and 16:9: the pool is 0.89 in
+            // the middle and 0.88 at y = 0.6, the soft edge reads 0.38–0.54 at
+            // y = 0.66, and the wall is black outside the cone. A hard edge
+            // (penumbra 0) stays 0.86 at the edge; penumbra 1 dims the inside to
+            // 0.74–0.80; angles of PI / 10 or PI / 15 miss the edge value.
+            { kind: "pixelApprox", x: 0.5, y: 0.5, rgb: [0.89, 0.89, 0.89], tol: 0.1 },
+            {
+              kind: "pixelApprox",
+              x: 0.5,
+              y: 0.6,
+              rgb: [0.88, 0.88, 0.88],
+              tol: 0.1,
+              message: "光の輪の内側まで暗くなっています。penumbra は 0.4 にしましょう",
+            },
+            {
+              kind: "pixelApprox",
+              x: 0.5,
+              y: 0.66,
+              rgb: [0.46, 0.46, 0.46],
+              tol: 0.2,
+              message: "光の輪のふちが目標どおりにぼけていません。angle は Math.PI / 12、penumbra は 0.4 にしましょう",
+            },
+            {
+              kind: "pixelApprox",
+              x: 0.5,
+              y: 0.2,
+              rgb: [0, 0, 0],
+              tol: 0.15,
+              message: "光の輪が広すぎます。angle を Math.PI / 12 にしてしぼりましょう",
+            },
+          ],
+          hints: ["spot.angle = Math.PI / 12;", "spot.penumbra = 0.4;"],
+          solution: SPOT_SCENE + "spot.angle = Math.PI / 12;\nspot.penumbra = 0.4;\n",
+        },
+      },
+      {
         id: "three-emissive",
         title: "自分で光る: emissive",
         explanation:
@@ -501,6 +718,52 @@ export const threeTracks: readonly Track[] = [
             "  new THREE.MeshStandardMaterial({ color: 'white', emissive: 'orange' }),\n" +
             ");\n" +
             "scene.add(ball);\n",
+        },
+      },
+      {
+        id: "three-roughness",
+        title: "つやを出す: roughness",
+        explanation:
+          "<p><code>MeshStandardMaterial</code> の <code>roughness</code>（0〜1）は表面の<b>粗さ</b>です。初期値の 1 はざらざらで、" +
+          "当たった光は全方向へ散らばり、つやがありません。値を小さくするほど表面がなめらかになり、光源の映り込み" +
+          "（<b>ハイライト</b>）が小さく鋭く光ります。もう 1つの <code>metalness</code>（0〜1）を上げると金属になり、" +
+          "映り込みが物の色に染まります。</p>",
+        challenge: {
+          starterCode:
+            ROUGHNESS_SCENE("{ color: 'royalblue' }") +
+            "\n// いまは roughness が初期値の 1（つや消し）。マテリアルの roughness を小さくして、つやを出そう\n",
+          task: "マテリアルの roughness を 0.2 にして、青いカプセルに細く鋭いハイライトを光らせよう。",
+          validators: [
+            { kind: "noError" },
+            { kind: "sourceMatches", pattern: "roughness\\s*[:=]" },
+            { kind: "materialOf", material: "MeshStandardMaterial" },
+            // Measured in headless Chrome at 1:1 and 16:9 on the stripe row: the
+            // sharp highlight of roughness 0.2 is pure white, while the light
+            // spread out by roughness 1 (0.25, 0.38, 0.79) or 0.5 (0.5, 0.56,
+            // 0.88) stays blue. Just below, the body keeps its diffuse blue
+            // (a metal, which has none, turns dark there).
+            {
+              kind: "pixelApprox",
+              x: 0.5,
+              y: 0.59,
+              rgb: [1, 1, 1],
+              tol: 0.1,
+              message: "ハイライトが細く鋭く光っていません。roughness を 0.2 にしましょう",
+            },
+            {
+              kind: "pixelApprox",
+              x: 0.5,
+              y: 0.66,
+              rgb: [0.25, 0.4, 0.85],
+              tol: 0.12,
+              message: "カプセルの青が暗く沈んでいます。metalness はそのままにして、roughness だけを小さくしましょう",
+            },
+          ],
+          hints: [
+            "new THREE.MeshStandardMaterial({ color: 'royalblue', roughness: 0.2 })",
+            "あとから pill.material.roughness = 0.2; と変えても同じです",
+          ],
+          solution: ROUGHNESS_SCENE("{ color: 'royalblue', roughness: 0.2 }"),
         },
       },
     ],
@@ -805,7 +1068,7 @@ export const threeTracks: readonly Track[] = [
     id: "three-animation",
     domain: "three",
     title: "アニメーション",
-    summary: "回転の考え方。実アプリでは毎フレーム値を更新する。",
+    summary: "回転の考え方と、キーフレームで動きを組み立てる AnimationClip。実アプリでは毎フレーム値を更新する。",
     icon: "🎞️",
     lessons: [
       {
@@ -837,13 +1100,57 @@ export const threeTracks: readonly Track[] = [
             "cube.rotation.y = 0.6;\n",
         },
       },
+      {
+        id: "three-keyframes",
+        title: "キーフレームで動かす: AnimationClip",
+        explanation:
+          "<p>決まった動きは、<b>キーフレーム</b>（ある時刻にどこにいるか）を並べて作れます。<code>VectorKeyframeTrack</code> に" +
+          "プロパティ名（<code>'.position'</code>）・時刻の配列・値の配列（x, y, z, x, y, z, …）を渡すと、キーフレームの間は" +
+          "なめらかにつながります。トラックを <code>AnimationClip</code> にまとめ、<code>AnimationMixer</code> で再生して、" +
+          "<code>mixer.update(秒)</code> で時間を進めます。実際のアプリでは毎フレーム呼びますが、ここでは 1秒進めた瞬間を" +
+          "確かめます。</p>",
+        challenge: {
+          starterCode: KEYFRAME_SCENE(
+            "const times = [0, 2];\n" +
+              "const values = [\n" +
+              "  0, -1.5, 0,  // 0 秒: 下\n" +
+              "  0, -1.5, 0,  // 2 秒: 下\n" +
+              "];\n",
+          ),
+          task: "キーフレームを 3つにして、0 秒で下 (0, -1.5, 0)、1 秒で上 (0, 1.5, 0)、2 秒でまた下を通る、跳ねるボールにしよう。",
+          validators: [
+            { kind: "noError" },
+            {
+              kind: "objectAt",
+              position: [0, 1.5, 0],
+              type: "Mesh",
+              tol: 0.2,
+              message: "1 秒の時点で、ボールが上 (0, 1.5, 0) に来ていません。times を [0, 1, 2] にして、1 秒の位置を足しましょう",
+            },
+            { kind: "pixelApprox", x: 0.5, y: 0.76, rgb: [1, 0.41, 0.71], tol: 0.15 },
+            { kind: "pixelApprox", x: 0.5, y: 0.24, rgb: BACKGROUND, tol: 0.15 },
+          ],
+          hints: [
+            "const times = [0, 1, 2];",
+            "values は 0, -1.5, 0,   0, 1.5, 0,   0, -1.5, 0（3つの位置を順に）",
+          ],
+          solution: KEYFRAME_SCENE(
+            "const times = [0, 1, 2];\n" +
+              "const values = [\n" +
+              "  0, -1.5, 0,  // 0 秒: 下\n" +
+              "  0, 1.5, 0,   // 1 秒: 上\n" +
+              "  0, -1.5, 0,  // 2 秒: 下\n" +
+              "];\n",
+          ),
+        },
+      },
     ],
   },
   {
     id: "three-data",
     domain: "three",
     title: "データで描く: 点とテクスチャ",
-    summary: "Float32Array や Uint8Array に数値を並べて、点の集まりやテクスチャを自分で組み立てる。",
+    summary: "数値の配列や Canvas 2D から、点の集まりやテクスチャを自分で組み立て、くり返して貼る。",
     icon: "🧮",
     lessons: [
       {
@@ -943,6 +1250,99 @@ export const threeTracks: readonly Track[] = [
             "]);\n" +
             "const tex = new THREE.DataTexture(data, 2, 2);\n" +
             "tex.needsUpdate = true;\n" +
+            "const board = new THREE.Mesh(\n" +
+            "  new THREE.PlaneGeometry(4, 4),\n" +
+            "  new THREE.MeshBasicMaterial({ map: tex }),\n" +
+            ");\n" +
+            "scene.add(board);\n",
+        },
+      },
+      {
+        id: "three-texture-repeat",
+        title: "模様をくり返す: wrapS・wrapT と repeat",
+        explanation:
+          "<p>床のタイルや壁紙のように、小さな模様を<b>くり返して</b>貼るときは、テクスチャの <code>repeat</code> で回数を" +
+          "決めます。ただし、はみ出した部分の扱いを決める <code>wrapS</code>（横）・<code>wrapT</code>（縦）は、初期値が" +
+          "「端の色を引き伸ばす」（<code>ClampToEdgeWrapping</code>）です。<code>THREE.RepeatWrapping</code> に変えないと、" +
+          "<code>repeat</code> を設定しても模様はくり返されません。</p>",
+        challenge: {
+          starterCode: STRIPE_TEXTURE + "\n// ここで、縞模様が縦に 4回くり返されるようにしよう\n\n" + STRIPE_BOARD,
+          task: "tex の wrapS と wrapT を THREE.RepeatWrapping にし、repeat を (1, 4) にして、縞模様を縦に 4回くり返そう。",
+          validators: [
+            { kind: "noError" },
+            { kind: "sourceMatches", pattern: "RepeatWrapping" },
+            { kind: "materialOf", material: "MeshBasicMaterial" },
+            // Eight stripes up the centre line, white at the bottom (checked
+            // well inside stripes 0, 1, 3, 4, 6 and 7).
+            { kind: "pixelApprox", x: 0.5, y: 0.22, rgb: STRIPE_WHITE, tol: 0.15 },
+            { kind: "pixelApprox", x: 0.5, y: 0.28, rgb: STRIPE_SKY, tol: 0.15 },
+            { kind: "pixelApprox", x: 0.5, y: 0.47, rgb: STRIPE_SKY, tol: 0.15 },
+            {
+              kind: "pixelApprox",
+              x: 0.5,
+              y: 0.53,
+              rgb: STRIPE_WHITE,
+              tol: 0.15,
+              message: "縞模様がくり返されていません。repeat だけでなく、wrapS と wrapT も THREE.RepeatWrapping にしましょう",
+            },
+            { kind: "pixelApprox", x: 0.5, y: 0.72, rgb: STRIPE_WHITE, tol: 0.15 },
+            { kind: "pixelApprox", x: 0.5, y: 0.78, rgb: STRIPE_SKY, tol: 0.15 },
+          ],
+          hints: [
+            "tex.wrapS = THREE.RepeatWrapping;  tex.wrapT = THREE.RepeatWrapping;",
+            "tex.repeat.set(1, 4);  // 横 1回・縦 4回",
+          ],
+          solution:
+            STRIPE_TEXTURE +
+            "tex.wrapS = THREE.RepeatWrapping;\n" +
+            "tex.wrapT = THREE.RepeatWrapping;\n" +
+            "tex.repeat.set(1, 4);\n" +
+            STRIPE_BOARD,
+        },
+      },
+      {
+        id: "three-canvas-texture",
+        title: "コードで描いて貼る: CanvasTexture",
+        explanation:
+          "<p>画像ファイルが無くても、<code>canvas</code> 要素に Canvas 2D で描いた絵を、そのままテクスチャにできます。" +
+          "<code>new THREE.CanvasTexture(canvas)</code> で作り、マテリアルの <code>map</code> に設定します。canvas の色は" +
+          "画面の色（sRGB）なので、<code>colorSpace</code> を <code>THREE.SRGBColorSpace</code> にしておくと、描いたとおりの色で" +
+          "表示されます（指定しないと白っぽく浮きます）。文字やグラフ、ラベルを 3D に貼るときの定番の方法です。</p>",
+        challenge: {
+          starterCode:
+            CANVAS_DRAWING +
+            "\n// ここで canvas から CanvasTexture を作り、板のマテリアルの map に設定しよう\n" +
+            "const board = new THREE.Mesh(\n" +
+            "  new THREE.PlaneGeometry(4, 4),\n" +
+            "  new THREE.MeshBasicMaterial({ color: 'white' }),\n" +
+            ");\n" +
+            "scene.add(board);\n",
+          task: "canvas から CanvasTexture を作って colorSpace を THREE.SRGBColorSpace にし、板のマテリアルの map に設定しよう。",
+          validators: [
+            { kind: "noError" },
+            { kind: "sourceMatches", pattern: "new THREE\\.CanvasTexture" },
+            { kind: "materialOf", material: "MeshBasicMaterial" },
+            // The picture up the centre line, in the colours it was drawn in.
+            { kind: "pixelApprox", x: 0.5, y: 0.78, rgb: [0.53, 0.81, 0.92], tol: 0.15 },
+            {
+              kind: "pixelApprox",
+              x: 0.5,
+              y: 0.53,
+              rgb: [1, 0.39, 0.28],
+              tol: 0.15,
+              message:
+                "canvas の絵が、描いたとおりの色で貼られていません。map に CanvasTexture を設定し、colorSpace を THREE.SRGBColorSpace にしましょう",
+            },
+            { kind: "pixelApprox", x: 0.5, y: 0.28, rgb: [0.18, 0.55, 0.34], tol: 0.15 },
+          ],
+          hints: [
+            "const tex = new THREE.CanvasTexture(canvas);  tex.colorSpace = THREE.SRGBColorSpace;",
+            "new THREE.MeshBasicMaterial({ map: tex })",
+          ],
+          solution:
+            CANVAS_DRAWING +
+            "const tex = new THREE.CanvasTexture(canvas);\n" +
+            "tex.colorSpace = THREE.SRGBColorSpace;  // canvas の色は画面の色（sRGB）\n" +
             "const board = new THREE.Mesh(\n" +
             "  new THREE.PlaneGeometry(4, 4),\n" +
             "  new THREE.MeshBasicMaterial({ map: tex }),\n" +

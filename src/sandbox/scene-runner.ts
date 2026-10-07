@@ -20,7 +20,15 @@ import { collectObjects } from "./scene-graph.js";
 /** The part of THREE.WebGLRenderer the runner uses (and learner code may touch). */
 export type SceneRenderer = Pick<
   THREE.WebGLRenderer,
-  "domElement" | "shadowMap" | "setClearColor" | "setPixelRatio" | "setSize" | "render" | "getContext"
+  | "domElement"
+  | "shadowMap"
+  | "localClippingEnabled"
+  | "clippingPlanes"
+  | "setClearColor"
+  | "setPixelRatio"
+  | "setSize"
+  | "render"
+  | "getContext"
 >;
 
 export interface SceneRunner {
@@ -62,12 +70,14 @@ export function createSceneRunner(renderer: SceneRenderer): SceneRunner {
   let fitted = { width: 0, height: 0, ratio: 0 };
 
   /** The renderer is shared by every run, but learner code may flip its
-   *  switches (shadow maps, clear colour); put them back so one run cannot
-   *  leak into the next and a lesson is judged on its own code. */
+   *  switches (shadow maps, clipping, clear colour); put them back so one run
+   *  cannot leak into the next and a lesson is judged on its own code. */
   function resetRenderer(): void {
     renderer.setClearColor(0x05060d, 1);
     renderer.shadowMap.enabled = false;
     renderer.shadowMap.type = THREE.PCFShadowMap;
+    renderer.localClippingEnabled = false;
+    renderer.clippingPlanes = [];
   }
   resetRenderer();
 

@@ -25,6 +25,8 @@ function fakeRenderer(width = 300, height = 300) {
   const renderer = {
     domElement,
     shadowMap: { enabled: false, type: THREE.PCFShadowMap as THREE.ShadowMapType },
+    localClippingEnabled: false,
+    clippingPlanes: [] as THREE.Plane[],
     clear: [0, 0] as [number, number],
     setClearColor(color: number, alpha: number) {
       renderer.clear = [color, alpha];
@@ -133,11 +135,17 @@ describe("createSceneRunner: a run", () => {
 
   it("puts back the renderer switches learner code may flip", () => {
     const { runner, renderer, draws } = fakeRenderer();
-    runner.run(`${CUBE}renderer.shadowMap.enabled = true;\nrenderer.setClearColor(0xffffff, 1);\n`);
+    runner.run(
+      `${CUBE}renderer.shadowMap.enabled = true;\nrenderer.setClearColor(0xffffff, 1);\n` +
+        "renderer.localClippingEnabled = true;\nrenderer.clippingPlanes = [new THREE.Plane()];\n",
+    );
     expect(draws[0].shadows).toBe(true);
+    expect(renderer.localClippingEnabled).toBe(true);
     runner.run(CUBE);
     expect(draws[1].shadows).toBe(false);
     expect(renderer.clear).toEqual([0x05060d, 1]);
+    expect(renderer.localClippingEnabled).toBe(false);
+    expect(renderer.clippingPlanes).toEqual([]);
   });
 });
 

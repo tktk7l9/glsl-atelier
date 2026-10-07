@@ -118,6 +118,7 @@ export function createShaderGrader(size = 128, grid = 24): ShaderGrader {
 export interface ShaderPreview {
   /** Recompile the user shader; returns the error log ("" on success). */
   setSource(source: string): string;
+  /** Fit the drawing buffer to the canvas's box, redrawing if that changed it. */
   resize(): void;
   dispose(): void;
 }
@@ -141,25 +142,38 @@ export function createShaderPreview(
     return Math.min(window.devicePixelRatio || 1, 2);
   }
 
-  function resize(): void {
+  /** Match the drawing buffer to the canvas's CSS box. True when it changed,
+   *  which also cleared it. */
+  function fit(): boolean {
     const w = Math.max(1, Math.floor(canvas.clientWidth * dpr()));
     const h = Math.max(1, Math.floor(canvas.clientHeight * dpr()));
-    if (canvas.width !== w || canvas.height !== h) {
-      canvas.width = w;
-      canvas.height = h;
-    }
+    if (canvas.width === w && canvas.height === h) return false;
+    canvas.width = w;
+    canvas.height = h;
+    return true;
   }
 
-  function frame(): void {
+  function draw(): void {
     if (!gl || !buffer || !program) return;
-    resize();
     const time = reducedMotion ? 1.0 : (performance.now() - start) / 1000;
     gl.viewport(0, 0, canvas.width, canvas.height);
     gl.useProgram(program);
     bindTriangle(gl, program, buffer);
     setUniforms(gl, program, canvas.width, canvas.height, time, mouse);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+
+  function frame(): void {
+    if (!gl || !buffer || !program) return;
+    fit();
+    draw();
     if (!reducedMotion) raf = requestAnimationFrame(frame);
+  }
+
+  /** A resize clears the canvas, and with reduced motion there is no
+   *  animation loop to paint it again, so redraw right away. */
+  function resize(): void {
+    if (fit()) draw();
   }
 
   canvas.addEventListener("pointermove", (e) => {
@@ -168,10 +182,14 @@ export function createShaderPreview(
     mouse[1] = (1 - (e.clientY - r.top) / r.height) * canvas.height;
   });
 
-  // The non-reduced path re-reads size every RAF; reduced motion needs a nudge.
-  window.addEventListener("resize", () => {
-    if (reducedMotion) frame();
-  });
+  // The canvas's box changes with the window, a device rotation, the preview
+  // switching between 1:1 and 16:9, or being shown again after a Three.js
+  // lesson. A ResizeObserver sees all of these; the window event also catches
+  // a changed devicePixelRatio (browser zoom) and stands in where there is no
+  // ResizeObserver.
+  const observer = typeof ResizeObserver === "function" ? new ResizeObserver(resize) : null;
+  observer?.observe(canvas);
+  window.addEventListener("resize", resize);
 
   function setSource(source: string): string {
     if (!gl || !buffer) return "WebGL を初期化できません";
@@ -189,6 +207,8 @@ export function createShaderPreview(
     resize,
     dispose() {
       cancelAnimationFrame(raf);
+      observer?.disconnect();
+      window.removeEventListener("resize", resize);
       if (gl && program) gl.deleteProgram(program);
     },
   };

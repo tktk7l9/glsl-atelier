@@ -214,6 +214,83 @@ function shadowLesson(x: number, y: number, blocks: boolean): RGB {
   });
 }
 
+/** GLSL `mod(x, y)`: the result takes the sign of y (unlike JS `%`). */
+const glslMod = (x: number, y: number): number => x - y * Math.floor(x / y);
+const mixRgb = (a: RGB, b: RGB, t: number): RGB => [mix(a[0], b[0], t), mix(a[1], b[1], t), mix(a[2], b[2], t)];
+const BLACK3: RGB = [0, 0, 0];
+
+/** The mirror lesson's butterfly, drawn after `fold` maps p.x (identity in the
+ *  starter, abs in the solution). */
+function butterfly(x: number, y: number, fold: (px: number) => number): RGB {
+  const [cx, py] = centred(x, y);
+  const px = fold(cx);
+  const body = length(px * 6, py) - 0.5;
+  const wing = Math.min(length(px - 0.42, py - 0.22) - 0.3, length(px - 0.3, py + 0.38) - 0.2);
+  const col = mixRgb(BLACK3, [1, 0.55, 0.15], 1 - step(0, wing));
+  return mixRgb(col, [0.95, 0.95, 0.95], 1 - step(0, body));
+}
+
+/** The kaleidoscope lesson: the motif drawn at the angle `fold` returns (the
+ *  angle itself in the starter; folded into the mirrored wedge in the solution). */
+const SEG = 6.2831853 / 6;
+function kaleidoscope(x: number, y: number, fold: (a: number) => number): RGB {
+  const [px, py] = centred(x, y);
+  const r = length(px, py);
+  const a = fold(Math.atan2(py, px));
+  const qx = r * Math.cos(a);
+  const qy = r * Math.sin(a);
+  const petal = length(qx - 0.6, qy - 0.16) - 0.14;
+  const bead = length(qx - 0.26, qy - 0.15) - 0.07;
+  const col = mixRgb(BLACK3, [1, 0.4, 0.7], 1 - step(0, petal));
+  return mixRgb(col, [0.3, 0.9, 1], 1 - step(0, bead));
+}
+
+/** The easing lesson at u_time = 1 (t = 0.5), with `ease` turning t into e. */
+function easedBall(x: number, y: number, ease: (t: number) => number): RGB {
+  const [px, py] = centred(x, y);
+  const e = ease(fract(1 / 2));
+  return grey(1 - step(0, length(px - mix(-0.6, 0.6, e), py) - 0.15));
+}
+
+/** The crescent lesson: the moon and the bite circle combined by `join`. */
+function crescent(x: number, y: number, join: (moon: number, bite: number) => number): RGB {
+  const [px, py] = centred(x, y);
+  const moon = length(px, py) - 0.6;
+  const bite = length(px - 0.3, py - 0.15) - 0.5;
+  const c = 1 - step(0, join(moon, bite));
+  return [c, 0.9 * c, 0.55 * c];
+}
+
+/** The linear-mix lesson: red → green, mixed as display values, or in the top
+ *  half "linear" (decode, mix, encode) or "outputOnly" (mix, then encode: the
+ *  near miss that skips decoding the endpoints). */
+function redToGreen(x: number, y: number, top: "naive" | "linear" | "outputOnly"): RGB {
+  const red: RGB = [1, 0.1, 0.1];
+  const green: RGB = [0.1, 1, 0.1];
+  const toLinear = (c: number): number => Math.pow(c, 2.2);
+  const toScreen = (c: number): number => Math.pow(c, 1 / 2.2);
+  const naive = mixRgb(red, green, x);
+  if (y <= 0.5 || top === "naive") return naive;
+  if (top === "outputOnly") return [toScreen(naive[0]), toScreen(naive[1]), toScreen(naive[2])];
+  const lin = mixRgb([toLinear(red[0]), toLinear(red[1]), toLinear(red[2])], [toLinear(green[0]), toLinear(green[1]), toLinear(green[2])], x);
+  return [toScreen(lin[0]), toScreen(lin[1]), toScreen(lin[2])];
+}
+
+/** The dither lesson's Bayer thresholds (bayer2 / bayer4 in the GLSL). */
+const bayer2 = (ax: number, ay: number): number =>
+  fract(glslMod(Math.floor(ax), 2) * 0.5 + glslMod(Math.floor(ay), 2) * 0.75);
+const bayer4 = (ax: number, ay: number): number => bayer2(ax * 0.5, ay * 0.5) * 0.25 + bayer2(ax, ay) + 1 / 32;
+
+/** The dither lesson, with `pick` turning (gray, threshold) into c. On the
+ *  square grader canvas, gl_FragCoord / u_resolution.y is st; gray is taken
+ *  at the centre of the cell (40 rows). */
+function dither(x: number, y: number, pick: (gray: number, threshold: number) => number): RGB {
+  const cx = Math.floor(x * 40);
+  const cy = Math.floor(y * 40);
+  const c = pick((cx + 0.5) / 40, bayer4(cx, cy));
+  return mixRgb([0.06, 0.22, 0.06], [0.61, 0.74, 0.06], c);
+}
+
 /** JS ports of (starter, solution) for the shader lessons added in 2026-10. */
 const SHADER_MODELS: Record<string, { starter: Shade; solution: Shade }> = {
   "glsl-repeat-dots": {
@@ -341,6 +418,30 @@ const SHADER_MODELS: Record<string, { starter: Shade; solution: Shade }> = {
     starter: (x, y) => shadowLesson(x, y, false),
     solution: (x, y) => shadowLesson(x, y, true),
   },
+  "glsl-easing": {
+    starter: (x, y) => easedBall(x, y, (t) => t),
+    solution: (x, y) => easedBall(x, y, (t) => 1 - (1 - t) * (1 - t)),
+  },
+  "glsl-sdf-subtract": {
+    starter: (x, y) => crescent(x, y, Math.min),
+    solution: (x, y) => crescent(x, y, (moon, bite) => Math.max(moon, -bite)),
+  },
+  "glsl-mirror": {
+    starter: (x, y) => butterfly(x, y, (px) => px),
+    solution: (x, y) => butterfly(x, y, Math.abs),
+  },
+  "glsl-kaleidoscope": {
+    starter: (x, y) => kaleidoscope(x, y, (a) => a),
+    solution: (x, y) => kaleidoscope(x, y, (a) => Math.abs(glslMod(a, SEG) - SEG * 0.5)),
+  },
+  "glsl-linear-mix": {
+    starter: (x, y) => redToGreen(x, y, "naive"),
+    solution: (x, y) => redToGreen(x, y, "linear"),
+  },
+  "glsl-dither": {
+    starter: (x, y) => dither(x, y, (gray) => gray),
+    solution: (x, y) => dither(x, y, (gray, threshold) => step(threshold, gray)),
+  },
 };
 
 describe("shader lessons modelled on the grader's sample grid", () => {
@@ -352,6 +453,43 @@ describe("shader lessons modelled on the grader's sample grid", () => {
       expect(evaluate(validators, shaderSnapshot(solution, model.solution)).failures).toEqual([]);
       expect(evaluate(validators, shaderSnapshot(starterCode, model.starter)).passed).toBe(false);
     });
+  }
+});
+
+/** Plausible wrong answers to the 2026-10 (third batch) shader lessons; each
+ *  must be rejected. The source is the solution's, so only the drawing decides. */
+const SHADER_NEAR_MISSES: Record<string, ReadonlyArray<readonly [string, Shade]>> = {
+  "glsl-easing": [
+    ["ease-in-out (smoothstep) is still halfway at t = 0.5", (x, y) => easedBall(x, y, (t) => smoothstep(0, 1, t))],
+    ["ease-in (t * t) lags behind", (x, y) => easedBall(x, y, (t) => t * t)],
+    ["jumping straight to the end", (x, y) => easedBall(x, y, () => 1)],
+  ],
+  "glsl-sdf-subtract": [
+    ["the intersection max(moon, bite)", (x, y) => crescent(x, y, Math.max)],
+    ["the bite minus the moon", (x, y) => crescent(x, y, (moon, bite) => Math.max(bite, -moon))],
+  ],
+  "glsl-mirror": [["flipping p.x instead of folding it", (x, y) => butterfly(x, y, (px) => -px)]],
+  "glsl-kaleidoscope": [
+    ["repeating the wedge without mirroring it", (x, y) => kaleidoscope(x, y, (a) => glslMod(a, SEG))],
+    ["mirroring without repeating", (x, y) => kaleidoscope(x, y, Math.abs)],
+  ],
+  "glsl-linear-mix": [
+    ["gamma-correcting only the mixed result", (x, y) => redToGreen(x, y, "outputOnly")],
+  ],
+  "glsl-dither": [
+    ["the comparison turned round", (x, y) => dither(x, y, (gray, threshold) => step(gray, threshold))],
+    ["one threshold for every cell", (x, y) => dither(x, y, (gray) => step(0.5, gray))],
+  ],
+};
+
+describe("shader near misses are rejected", () => {
+  for (const [id, misses] of Object.entries(SHADER_NEAR_MISSES)) {
+    for (const [label, shade] of misses) {
+      it(`${id}: ${label}`, () => {
+        const { validators, solution } = lessonById(id)!.challenge;
+        expect(evaluate(validators, shaderSnapshot(solution, shade)).passed).toBe(false);
+      });
+    }
   }
 });
 
@@ -368,10 +506,46 @@ const PIXEL_KINDS: ReadonlySet<ValidatorSpec["kind"]> = new Set([
   "rendersNonEmpty",
 ]);
 
+/** The renderer switches lesson code may flip (reset by the runner before each run). */
+interface RendererState {
+  shadowMap: { enabled: boolean; type: THREE.ShadowMapType };
+  localClippingEnabled: boolean;
+  clippingPlanes: THREE.Plane[];
+  setClearColor(): void;
+}
+
 interface SceneRun {
   readonly scene: THREE.Scene;
   readonly camera: THREE.PerspectiveCamera;
+  readonly renderer: RendererState;
   readonly snapshot: SceneSnapshot;
+}
+
+/** A Canvas 2D stand-in for Node: opaque fillRect in CSS colours, kept as
+ *  RGBA bytes with row 0 at the top, like a real canvas. */
+class FakeCanvas {
+  width = 300;
+  height = 150;
+  pixels = new Uint8Array(0);
+  getContext(kind: string) {
+    if (kind !== "2d") return null;
+    this.pixels = new Uint8Array(this.width * this.height * 4);
+    let fill = [0, 0, 0, 255];
+    const canvas = this;
+    return {
+      set fillStyle(style: string) {
+        const hex = new THREE.Color().setStyle(style).getHex(); // back in sRGB, as a canvas stores it
+        fill = [(hex >> 16) & 255, (hex >> 8) & 255, hex & 255, 255];
+      },
+      fillRect(x: number, y: number, w: number, h: number) {
+        for (let py = Math.max(0, y); py < Math.min(canvas.height, y + h); py++) {
+          for (let px = Math.max(0, x); px < Math.min(canvas.width, x + w); px++) {
+            canvas.pixels.set(fill, (py * canvas.width + px) * 4);
+          }
+        }
+      },
+    };
+  }
 }
 
 /** Run learner JS the way the sandbox does, minus the WebGL renderer. */
@@ -380,12 +554,22 @@ function execScene(code: string, aspect = 1): SceneRun {
   const camera = new THREE.PerspectiveCamera(60, aspect, 0.1, 100);
   camera.position.set(0, 0, 5);
   camera.lookAt(0, 0, 0);
-  const renderer = { shadowMap: { enabled: false, type: THREE.PCFShadowMap }, setClearColor() {} };
+  const renderer: RendererState = {
+    shadowMap: { enabled: false, type: THREE.PCFShadowMap },
+    localClippingEnabled: false,
+    clippingPlanes: [],
+    setClearColor() {},
+  };
   let error: string | null = null;
+  // Lesson code may draw on a canvas (CanvasTexture); Node has no DOM.
+  const global = globalThis as { document?: unknown };
+  global.document = { createElement: (tag: string) => (tag === "canvas" ? new FakeCanvas() : null) };
   try {
     new Function("THREE", "scene", "camera", "renderer", code)(THREE, scene, camera, renderer);
   } catch (e) {
     error = e instanceof Error ? e.message : String(e);
+  } finally {
+    delete global.document;
   }
   const snapshot: SceneSnapshot = {
     kind: "scene",
@@ -394,7 +578,7 @@ function execScene(code: string, aspect = 1): SceneRun {
     objects: collectObjects(scene),
     camera: { type: camera.type, position: [camera.position.x, camera.position.y, camera.position.z] },
   };
-  return { scene, camera, snapshot };
+  return { scene, camera, renderer, snapshot };
 }
 
 const runScene = (code: string): SceneSnapshot => execScene(code).snapshot;
@@ -411,16 +595,55 @@ const encode = (r: number, g: number, b: number): RGB => [linearToSrgb(r), linea
 /** How opaque a material draws: three ignores `opacity` unless `transparent`. */
 const alphaOf = (m: THREE.Material): number => (m.transparent ? m.opacity : 1);
 
+const srgbToLinear = (c: number): number => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
+
+/** Textures the model can sample: a DataTexture or a canvas drawn in Node. */
+const sampleable = (map: THREE.Texture): boolean =>
+  map instanceof THREE.DataTexture || (map instanceof THREE.CanvasTexture && map.image instanceof FakeCanvas);
+
 /** Can the flat model shade `m` without lighting maths? Basic colours (plain
- *  or a DataTexture), and standard materials in a scene with no light, which
- *  then show nothing but their emission. */
+ *  or textured), normal colours, and standard materials in a scene with no
+ *  light, which then show nothing but their emission. */
 function flatShadable(m: THREE.Material, lit: boolean): boolean {
-  if (m instanceof THREE.MeshBasicMaterial) {
-    return !m.wireframe && (m.map === null || m.map instanceof THREE.DataTexture);
-  }
+  if (m instanceof THREE.MeshBasicMaterial) return !m.wireframe && (m.map === null || sampleable(m.map));
+  if (m instanceof THREE.MeshNormalMaterial) return !m.wireframe && !m.flatShading && !m.normalMap && !m.bumpMap;
   if (m instanceof THREE.MeshStandardMaterial) return !lit && !m.map && !m.emissiveMap;
   if (m instanceof THREE.PointsMaterial) return !m.map && !m.vertexColors && m.sizeAttenuation;
   return false;
+}
+
+/** The texel under `uv` as a linear colour. The lessons sample well inside
+ *  texels, so nearest sampling stands in for every filter. */
+function texel(map: THREE.Texture, uv: THREE.Vector2): RGB {
+  // repeat / offset / rotation, as the renderer's uvTransform applies them.
+  map.updateMatrix();
+  const at = uv.clone().applyMatrix3(map.matrix);
+  const wrap = (v: number, mode: THREE.Wrapping): number =>
+    mode === THREE.RepeatWrapping ? fract(v) : Math.min(1, Math.max(0, v)); // else ClampToEdge
+  const u = wrap(at.x, map.wrapS);
+  const v = wrap(at.y, map.wrapT);
+  const { data, width, height } =
+    map.image instanceof FakeCanvas
+      ? { data: map.image.pixels, width: map.image.width, height: map.image.height }
+      : (map.image as { data: Uint8Array; width: number; height: number });
+  const column = Math.min(width - 1, Math.floor(u * width));
+  const fromBottom = Math.min(height - 1, Math.floor(v * height));
+  // A DataTexture's first row is the bottom (flipY = false); a canvas's first
+  // row is its top, flipped up to v = 1 on upload (flipY = true).
+  const row = map.flipY ? height - 1 - fromBottom : fromBottom;
+  const i = (row * width + column) * 4;
+  const raw: RGB = [data[i] / 255, data[i + 1] / 255, data[i + 2] / 255];
+  // A NoColorSpace texel is used as linear; an sRGB one is decoded first.
+  return map.colorSpace === THREE.SRGBColorSpace ? [srgbToLinear(raw[0]), srgbToLinear(raw[1]), srgbToLinear(raw[2])] : raw;
+}
+
+/** The colour MeshNormalMaterial writes for a ray hit: the interpolated vertex
+ *  normal turned towards the viewer (as the shader flips back faces), in view
+ *  space, as normal * 0.5 + 0.5, with no colour-space encoding. */
+function normalColor(hit: THREE.Intersection, camera: THREE.Camera): RGB {
+  const n = (hit.normal as THREE.Vector3).clone().transformDirection(hit.object.matrixWorld);
+  n.transformDirection(camera.matrixWorldInverse);
+  return [n.x * 0.5 + 0.5, n.y * 0.5 + 0.5, n.z * 0.5 + 0.5];
 }
 
 /** The colour (as written to the canvas) of a flat-shadable surface at `uv`. */
@@ -431,21 +654,33 @@ function flatColor(m: THREE.Material, uv: THREE.Vector2 | undefined): RGB {
     return encode(e.r * k, e.g * k, e.b * k);
   }
   const { color, map } = m as THREE.MeshBasicMaterial;
-  if (!(map instanceof THREE.DataTexture)) return encode(color.r, color.g, color.b);
+  if (!map) return encode(color.r, color.g, color.b);
   // Never flagged with needsUpdate ⇒ WebGL samples three's empty (black) texture.
   if (map.version === 0 || !uv) return [0, 0, 0];
-  const { data, width, height } = map.image as { data: Uint8Array; width: number; height: number };
-  // NearestFilter, flipY = false: texel row 0 is the bottom (v = 0).
-  const i = (Math.min(height - 1, Math.floor(uv.y * height)) * width + Math.min(width - 1, Math.floor(uv.x * width))) * 4;
-  // A NoColorSpace texel is linear, multiplied by the (linear) material colour.
-  return encode((color.r * data[i]) / 255, (color.g * data[i + 1]) / 255, (color.b * data[i + 2]) / 255);
+  // The texel is multiplied by the (linear) material colour.
+  const [r, g, b] = texel(map, uv);
+  return encode(color.r * r, color.g * g, color.b * b);
+}
+
+/** Does the renderer draw `o`? Not when it or an ancestor is hidden. */
+function drawn(o: THREE.Object3D): boolean {
+  for (let p: THREE.Object3D | null = o; p; p = p.parent) if (!p.visible) return false;
+  return true;
+}
+
+/** Is `point` on `material` cut away by a clipping plane? Global planes always
+ *  apply; a material's own only with renderer.localClippingEnabled. A point is
+ *  clipped on the negative side of any plane (clipIntersection = false). */
+function clipped(renderer: RendererState, material: THREE.Material, point: THREE.Vector3): boolean {
+  const planes = [...renderer.clippingPlanes, ...(renderer.localClippingEnabled ? (material.clippingPlanes ?? []) : [])];
+  return planes.some((plane) => plane.distanceToPoint(point) < 0);
 }
 
 /** The read-back grid of an unlit scene, found by ray casting the pixels the
  *  runner samples (preview `aspect`, 360 px tall), or null when the scene holds
  *  anything this model cannot shade (lights on lit materials, fog, normal or
  *  shader materials, lines…). */
-function flatRender({ scene, camera }: SceneRun, aspect: number): Sample[] | null {
+function flatRender({ scene, camera, renderer }: SceneRun, aspect: number): Sample[] | null {
   if (scene.fog) return null;
   scene.updateMatrixWorld(true);
   camera.updateMatrixWorld(true);
@@ -481,17 +716,23 @@ function flatRender({ scene, camera }: SceneRun, aspect: number): Sample[] | nul
       const seen = new Set<string>();
       for (const hit of raycaster.intersectObjects(scene.children, true)) {
         if (hit.object instanceof THREE.Points) continue; // squares, handled below
+        // The Raycaster ignores `visible`; the renderer skips hidden subtrees.
+        if (!drawn(hit.object)) continue;
+        const m = (hit.object as THREE.Mesh).material as THREE.Material;
+        // A clipped fragment is discarded, so the ray goes on to what is behind.
+        if (clipped(renderer, m, hit.point)) continue;
         // A ray through a shared edge hits both triangles; the GPU fills the
         // pixel once, so count the nearest hit per object (and instance).
         const key = `${hit.object.uuid}:${hit.instanceId ?? ""}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        const m = (hit.object as THREE.Mesh).material as THREE.Material;
-        layers.push([hit.distance, flatColor(m, hit.uv), alphaOf(m)]);
+        const colour = m instanceof THREE.MeshNormalMaterial ? normalColor(hit, camera) : flatColor(m, hit.uv);
+        layers.push([hit.distance, colour, alphaOf(m)]);
       }
       // A point is a screen-aligned square, size / (2 · depth) NDC high on
       // each side of its centre (gl_PointSize = size · scale / depth).
       for (const p of points) {
+        if (!drawn(p)) continue;
         const m = p.material as THREE.PointsMaterial;
         const pos = p.geometry.getAttribute("position");
         for (let i = 0; i < pos.count; i++) {
@@ -543,21 +784,34 @@ const FLAT_LESSONS = [
   "three-first-mesh",
   "three-color",
   "three-position",
+  "three-sphere",
+  "three-torus",
+  "three-plane",
+  "three-normal-material",
   "three-transparent",
+  "three-clipping",
   "three-emissive",
+  "three-scale",
+  "three-group",
   "three-hierarchy",
   "three-instanced",
+  "three-camera-back",
+  "three-camera-angle",
   "three-camera-fov",
+  "three-rotate",
+  "three-keyframes",
   "three-points",
   "three-data-texture",
+  "three-texture-repeat",
+  "three-canvas-texture",
 ];
 
 describe("unlit Three.js lessons judged on a ray-cast frame, pixels included", () => {
   const threeLessons = LESSONS.filter((l) => l.id.startsWith("three-"));
 
   it("draws exactly the unlit lessons (the rest need a GPU)", () => {
-    const drawn = threeLessons.filter((l) => flatRender(execScene(l.challenge.solution), 1) !== null);
-    expect(drawn.map((l) => l.id)).toEqual(FLAT_LESSONS);
+    const rendered = threeLessons.filter((l) => flatRender(execScene(l.challenge.solution), 1) !== null);
+    expect(rendered.map((l) => l.id)).toEqual(FLAT_LESSONS);
   });
 
   for (const id of FLAT_LESSONS) {
@@ -582,6 +836,45 @@ describe("unlit Three.js lessons judged on a ray-cast frame, pixels included", (
   }
 });
 
+/** Plausible wrong answers to the 2026-10 (third batch) unlit scene lessons,
+ *  as edits of the solution; each must be rejected at both preview shapes. */
+const SCENE_NEAR_MISSES: Record<string, ReadonlyArray<readonly [string, (solution: string) => string]>> = {
+  "three-clipping": [
+    ["planes without renderer.localClippingEnabled", (s) => s.replace("renderer.localClippingEnabled = true;\n", "")],
+    ["the plane facing up (keeps the top half)", (s) => s.replace("Vector3(0, -1, 0)", "Vector3(0, 1, 0)")],
+    ["hiding the shell instead of cutting it", (s) => `${s}shell.visible = false;\n`],
+  ],
+  "three-keyframes": [
+    ["three keys but the middle one still down", (s) => s.replace("0, 1.5, 0,   // 1 秒: 上", "0, -1.5, 0,  // 1 秒: 下")],
+    ["the top key at 2 s (halfway up at 1 s)", (s) => s.replace("[0, 1, 2]", "[0, 2, 4]")],
+  ],
+  "three-texture-repeat": [
+    ["repeat without RepeatWrapping (the edge texel is stretched)", (s) => s.replace(/tex\.wrap[ST] = THREE\.RepeatWrapping;\n/g, "")],
+    ["three repeats instead of four", (s) => s.replace("repeat.set(1, 4)", "repeat.set(1, 3)")],
+  ],
+  "three-canvas-texture": [
+    ["no colorSpace (the canvas colours come out washed out)", (s) => s.replace(/tex\.colorSpace = [^\n]*\n/, "")],
+  ],
+};
+
+describe("unlit scene near misses are rejected", () => {
+  for (const [id, misses] of Object.entries(SCENE_NEAR_MISSES)) {
+    const { validators, solution } = lessonById(id)!.challenge;
+    for (const [label, edit] of misses) {
+      it(`${id}: ${label}`, () => {
+        const code = edit(solution);
+        expect(code).not.toBe(solution);
+        for (const aspect of [1, 16 / 9]) {
+          const run = execScene(code, aspect);
+          const frame = flatRender(run, aspect);
+          expect(frame).not.toBeNull();
+          expect(evaluate(validators, { ...run.snapshot, samples: frame! }).passed).toBe(false);
+        }
+      });
+    }
+  }
+});
+
 describe("the flat model itself", () => {
   const frameOf = (code: string, aspect = 1): Sample[] | null => flatRender(execScene(code), aspect);
   const at = (frame: Sample[], x: number, y: number): RGB => {
@@ -598,7 +891,8 @@ describe("the flat model itself", () => {
   it("refuses scenes that need lighting, fog or other materials", () => {
     const ball = "new THREE.Mesh(new THREE.SphereGeometry(1, 16, 8), MAT)";
     const lit = "scene.add(new THREE.AmbientLight(0xffffff, 1));\n";
-    expect(frameOf(`scene.add(${ball.replace("MAT", "new THREE.MeshNormalMaterial()")});`)).toBeNull();
+    expect(frameOf(`scene.add(${ball.replace("MAT", "new THREE.ShaderMaterial()")});`)).toBeNull();
+    expect(frameOf(`scene.add(${ball.replace("MAT", "new THREE.MeshNormalMaterial({ flatShading: true })")});`)).toBeNull();
     expect(frameOf(`scene.add(${ball.replace("MAT", "new THREE.MeshStandardMaterial()")});${lit}`)).toBeNull();
     expect(frameOf(`scene.add(${ball.replace("MAT", "new THREE.MeshBasicMaterial({ wireframe: true })")});`)).toBeNull();
     expect(frameOf("scene.fog = new THREE.Fog(0x000000, 1, 2);")).toBeNull();
@@ -606,6 +900,14 @@ describe("the flat model itself", () => {
     expect(
       frameOf("scene.add(new THREE.Points(new THREE.BufferGeometry(), new THREE.PointsMaterial({ sizeAttenuation: false })));"),
     ).toBeNull();
+  });
+
+  it("draws normal colours: the middle of a sphere faces the camera, its top faces up", () => {
+    const frame = frameOf("scene.add(new THREE.Mesh(new THREE.SphereGeometry(2, 64, 32), new THREE.MeshNormalMaterial()));")!;
+    const [r, g, b] = at(frame, 0.5, 0.5);
+    expect([r, g]).toEqual([expect.closeTo(0.5, 1), expect.closeTo(0.5, 1)]);
+    expect(b).toBeGreaterThan(0.95);
+    expect(at(frame, 0.5, 0.78)[1]).toBeGreaterThan(0.7);
   });
 
   it("keeps a basic colour unlit, even next to a light", () => {

@@ -141,6 +141,108 @@ const VORONOI_HEAD =
   "  vec2 f = fract(pos);\n" +
   "  float m = 1.0;  // いちばん近い点までの距離\n";
 
+/** The mirror lesson's butterfly, drawn from `p`; `fold` goes right after `p`. */
+const butterflyMain = (fold: string): string =>
+  "void main() {\n" +
+  CENTRED +
+  fold +
+  "  float body = length(p * vec2(6.0, 1.0)) - 0.5;          // 胴体（細長い楕円）\n" +
+  "  float wing = min(length(p - vec2(0.42, 0.22)) - 0.3,   // 上の羽\n" +
+  "                   length(p - vec2(0.3, -0.38)) - 0.2);  // 下の羽\n" +
+  "  vec3 col = vec3(0.0);\n" +
+  "  col = mix(col, vec3(1.0, 0.55, 0.15), 1.0 - step(0.0, wing));\n" +
+  "  col = mix(col, vec3(0.95), 1.0 - step(0.0, body));\n" +
+  "  gl_FragColor = vec4(col, 1.0);\n}";
+
+const WING: [number, number, number] = [1, 0.55, 0.15];
+
+/** The kaleidoscope lesson: polar coordinates, then `fold`, then the motif
+ *  (a petal at 15° and a bead at 30°) drawn at the rebuilt position `q`. */
+const kaleidoscopeMain = (fold: string): string =>
+  "void main() {\n" +
+  CENTRED +
+  "  float a = atan(p.y, p.x);    // 角度\n" +
+  "  float r = length(p);          // 中心からの距離\n" +
+  "  float seg = 6.2831853 / 6.0;  // 扇形 1つぶんの角度（60°）\n" +
+  fold +
+  "  vec2 q = r * vec2(cos(a), sin(a));  // 角度と距離から座標を作り直す\n" +
+  "  float petal = length(q - vec2(0.6, 0.16)) - 0.14;  // 花びら（15° の方向）\n" +
+  "  float bead = length(q - vec2(0.26, 0.15)) - 0.07;  // 小さな玉（30° の方向）\n" +
+  "  vec3 col = vec3(0.0);\n" +
+  "  col = mix(col, vec3(1.0, 0.4, 0.7), 1.0 - step(0.0, petal));\n" +
+  "  col = mix(col, vec3(0.3, 0.9, 1.0), 1.0 - step(0.0, bead));\n" +
+  "  gl_FragColor = vec4(col, 1.0);\n}";
+
+const PETAL: [number, number, number] = [1, 0.4, 0.7];
+const BEAD: [number, number, number] = [0.3, 0.9, 1];
+
+/** The easing lesson: a ball that crosses the screen every 2 s; `ease` sets `e`. */
+const easingMain = (ease: string): string =>
+  "void main() {\n" +
+  CENTRED +
+  "  // 2 秒ごとに 0 → 1 をくり返す進み具合\n" +
+  "  float t = fract(u_time / 2.0);\n" +
+  ease +
+  "  float x = mix(-0.6, 0.6, e);  // 左から右へ\n" +
+  "  float d = length(p - vec2(x, 0.0)) - 0.15;\n" +
+  "  float c = 1.0 - step(0.0, d);\n" +
+  "  gl_FragColor = vec4(vec3(c), 1.0);\n}";
+
+/** The crescent lesson: a moon and the circle to bite out of it, joined by `join`. */
+const moonMain = (join: string): string =>
+  "void main() {\n" +
+  CENTRED +
+  "  float moon = length(p) - 0.6;                    // 月（円）\n" +
+  "  float bite = length(p - vec2(0.3, 0.15)) - 0.5;  // くり抜きたい円\n" +
+  join +
+  "  float c = 1.0 - step(0.0, d);\n" +
+  "  gl_FragColor = vec4(vec3(1.0, 0.9, 0.55) * c, 1.0);\n}";
+
+const MOON: [number, number, number] = [1, 0.9, 0.55];
+
+/** The linear-mix lesson: a red→green ramp, mixed as display values in the
+ *  bottom half (the reference) and by `top` in the top half. */
+const linearMixMain = (top: string): string =>
+  "void main() {\n" +
+  "  vec2 st = gl_FragCoord.xy / u_resolution;\n" +
+  "  vec3 a = vec3(1.0, 0.1, 0.1);  // 赤（画面の色）\n" +
+  "  vec3 b = vec3(0.1, 1.0, 0.1);  // 緑（画面の色）\n" +
+  "  // 下半分: 画面の色のまま混ぜた見本（まん中が暗くにごる）\n" +
+  "  vec3 col = mix(a, b, st.x);\n" +
+  "  if (st.y > 0.5) {\n" +
+  top +
+  "  }\n" +
+  "  gl_FragColor = vec4(col, 1.0);\n}";
+
+const BAYER_FN =
+  "// 2×2 マスのしきい値: マスの位置ごとに 0.0・0.5・0.75・0.25\n" +
+  "float bayer2(vec2 a) {\n" +
+  "  a = mod(floor(a), 2.0);\n" +
+  "  return fract(a.x * 0.5 + a.y * 0.75);\n" +
+  "}\n\n" +
+  "// 4×4 マスのしきい値（ベイヤー行列）: 2×2 を 2段重ねた 16 段階。1/32, 3/32, …, 31/32 のどれか\n" +
+  "float bayer4(vec2 a) {\n" +
+  "  return bayer2(a * 0.5) * 0.25 + bayer2(a) + 1.0 / 32.0;\n" +
+  "}\n\n";
+
+/** The dither lesson's `main()`; `pick` sets `c` from `gray` and the cell.
+ *  The ramp is measured at each cell's centre, so a cell is one flat colour
+ *  (a per-pixel ramp split the cells it crossed into slivers). With 40 rows the
+ *  centre values (2c + 1) / 80 never equal a threshold (2k + 1) / 32. */
+const ditherMain = (pick: string): string =>
+  "void main() {\n" +
+  "  // 画面を正方形のマスに区切る（縦に 40 マス）\n" +
+  "  vec2 cell = floor(gl_FragCoord.xy / u_resolution.y * 40.0);  // マスの番号\n" +
+  "  vec2 center = (cell + 0.5) * u_resolution.y / 40.0;          // マスの中心（ピクセル）\n" +
+  "  float gray = center.x / u_resolution.x;  // 左が暗く、右が明るいグラデーション（マスの中は同じ明るさ）\n" +
+  pick +
+  "  // 使う色は 2つだけ（レトロな携帯ゲーム機の暗い緑と明るい緑）\n" +
+  "  vec3 col = mix(vec3(0.06, 0.22, 0.06), vec3(0.61, 0.74, 0.06), c);\n" +
+  "  gl_FragColor = vec4(col, 1.0);\n}";
+
+const DITHER_DARK: [number, number, number] = [0.06, 0.22, 0.06];
+const DITHER_LIGHT: [number, number, number] = [0.61, 0.74, 0.06];
+
 export const glslTracks: readonly Track[] = [
   {
     id: "glsl-basics",
@@ -431,7 +533,7 @@ export const glslTracks: readonly Track[] = [
     id: "glsl-motion",
     domain: "glsl",
     title: "時間とアニメーション",
-    summary: "u_time と sin/cos で、時間とともに変化する絵をつくる。",
+    summary: "u_time と sin/cos で時間とともに変化する絵をつくり、イージングで動きに緩急をつける。",
     icon: "🌀",
     lessons: [
       {
@@ -477,6 +579,44 @@ export const glslTracks: readonly Track[] = [
           solution: sh(
             "void main() {\n  vec2 st = gl_FragCoord.xy / u_resolution;\n  float x = st.x - u_time * 0.2;\n  float c = step(0.5, fract(x));\n  gl_FragColor = vec4(vec3(c), 1.0);\n}",
           ),
+        },
+      },
+      {
+        id: "glsl-easing",
+        title: "動きに緩急をつける: イージング",
+        explanation:
+          "<p>一定の速さで進む動き（リニア）は、機械的に見えます。進み具合 <code>t</code>（0〜1）を<b>イージング関数</b>に" +
+          "通すと、動きに緩急がつきます。たとえば ease-out の <code>1.0 - (1.0 - t) * (1.0 - t)</code> は、出だしが速く、" +
+          "最後はゆっくり止まります。同じ <code>t = 0.5</code> の瞬間でも、リニアならまだ道のりの半分、ease-out なら " +
+          "4分の3 まで進んでいます。チェックは <code>u_time = 1.0</code>（このコードでは <code>t = 0.5</code>）の瞬間の絵で行います。</p>",
+        challenge: {
+          starterCode: sh(easingMain("  // ここで t をイージングしよう（いまはリニアのまま）\n  float e = t;\n")),
+          task: "e を ease-out（1.0 - (1.0 - t) * (1.0 - t)）にして、ボールが勢いよく動き出し、ゆっくり止まるようにしよう。",
+          validators: [
+            { kind: "compiles" },
+            // At u_time = 1 (t = 0.5) ease-out has covered 3/4 of the way: the
+            // ball is centred at x = 0.3, while the linear ball is still at 0.
+            {
+              kind: "pixelApprox",
+              x: 0.65,
+              y: 0.48,
+              rgb: WHITE,
+              message: "t = 0.5 の瞬間、ボールは道のりの 4分の3（x = 0.3）まで進んでいるはずです。e を ease-out にしましょう",
+            },
+            { kind: "pixelApprox", x: 0.5, y: 0.48, rgb: BLACK },
+            {
+              kind: "pixelApprox",
+              x: 0.85,
+              y: 0.48,
+              rgb: BLACK,
+              message: "ボールが進みすぎています。e = 1.0 - (1.0 - t) * (1.0 - t) にしましょう",
+            },
+          ],
+          hints: [
+            "float e = 1.0 - (1.0 - t) * (1.0 - t);",
+            "t = 0.5 のとき e = 0.75。プレビューでは、ボールが勢いよく飛び出してから減速します",
+          ],
+          solution: sh(easingMain("  float e = 1.0 - (1.0 - t) * (1.0 - t);\n")),
         },
       },
     ],
@@ -569,7 +709,7 @@ export const glslTracks: readonly Track[] = [
     id: "glsl-sdf",
     domain: "glsl",
     title: "距離関数（SDF）",
-    summary: "「形までの距離」を返す関数で図形を描き、輪郭にし、溶かし合わせる。",
+    summary: "「形までの距離」を返す関数で図形を描き、輪郭にし、溶かし合わせ、くり抜く。",
     icon: "📏",
     lessons: [
       {
@@ -703,13 +843,39 @@ export const glslTracks: readonly Track[] = [
           ),
         },
       },
+      {
+        id: "glsl-sdf-subtract",
+        title: "くり抜く: SDF の引き算",
+        explanation:
+          "<p>2つの SDF <code>a</code>・<code>b</code> は、組み合わせ方で形が変わります。<code>min(a, b)</code> は<b>和</b>" +
+          "（どちらかの内側）、<code>max(a, b)</code> は<b>共通部分</b>（両方の内側）。そして <code>-b</code> は b の内と外を" +
+          "入れ替えた距離なので、<code>max(a, -b)</code> は「a の内側で、しかも b の外側」、つまり<b>a から b をくり抜いた形</b>" +
+          "になります。</p>",
+        challenge: {
+          starterCode: sh(moonMain("  float d = min(moon, bite);                       // いまは 2つの円の和\n")),
+          task: "d を max(moon, -bite) にして、月の円から bite の円をくり抜き、三日月にしよう。",
+          validators: [
+            { kind: "compiles" },
+            { kind: "sourceMatches", pattern: "max\\s*\\(" },
+            // The crescent stays…
+            { kind: "pixelApprox", x: 0.3, y: 0.45, rgb: MOON },
+            { kind: "pixelApprox", x: 0.55, y: 0.25, rgb: MOON },
+            // …and the bite is empty, inside the moon's circle and outside it.
+            { kind: "pixelApprox", x: 0.6, y: 0.55, rgb: BLACK },
+            { kind: "pixelApprox", x: 0.85, y: 0.6, rgb: BLACK },
+            { kind: "pixelApprox", x: 0.05, y: 0.05, rgb: BLACK },
+          ],
+          hints: ["float d = max(moon, -bite);", "max(moon, bite) だと、2つの円が重なった部分だけが残ります"],
+          solution: sh(moonMain("  float d = max(moon, -bite);\n")),
+        },
+      },
     ],
   },
   {
     id: "glsl-transform",
     domain: "glsl",
     title: "座標を変換する",
-    summary: "回転行列 mat2 で座標ごと回す。回したい中心を原点に移してから回すのがコツ。",
+    summary: "回転行列 mat2 で座標ごと回し、abs で折り返して鏡に映す。回すときは中心を原点に移してから。",
     icon: "🔄",
     lessons: [
       {
@@ -814,13 +980,40 @@ export const glslTracks: readonly Track[] = [
           ),
         },
       },
+      {
+        id: "glsl-mirror",
+        title: "鏡に映す: abs で折り返す",
+        explanation:
+          "<p>左右対称の絵は、半分だけ描けば足ります。座標の x を <code>p.x = abs(p.x);</code> と<b>絶対値</b>にすると、" +
+          "左側のピクセルも右側と同じ座標を受け取るので、右に描いたものが x = 0 の線を鏡にして左にも映ります。" +
+          "チョウや顔、雪の結晶など、対称な形を少ないコードで描く定番の手です。</p>",
+        challenge: {
+          starterCode: sh(butterflyMain("  // ここで p.x を折り返そう\n")),
+          task: "羽を描く前に p.x を abs で折り返して、右の羽を左にも映し、左右対称のチョウにしよう。",
+          validators: [
+            { kind: "compiles" },
+            { kind: "sourceMatches", pattern: "abs\\s*\\(" },
+            // Both wings on the right, and their reflections on the left. (Not
+            // `symmetric`: a third of the grader's mirrored sample pairs land
+            // one pixel apart, so a wing edge between them reads as asymmetric.)
+            { kind: "pixelApprox", x: 0.71, y: 0.61, rgb: WING },
+            { kind: "pixelApprox", x: 0.65, y: 0.31, rgb: WING },
+            { kind: "pixelApprox", x: 0.29, y: 0.61, rgb: WING },
+            { kind: "pixelApprox", x: 0.35, y: 0.31, rgb: WING },
+            { kind: "pixelApprox", x: 0.48, y: 0.48, rgb: [0.95, 0.95, 0.95] },
+            { kind: "pixelApprox", x: 0.04, y: 0.04, rgb: BLACK },
+          ],
+          hints: ["p.x = abs(p.x);", "羽や胴体の距離を計算するより前（p を作った直後）で折り返します"],
+          solution: sh(butterflyMain("  p.x = abs(p.x);  // 左半分も右半分と同じ座標に\n")),
+        },
+      },
     ],
   },
   {
     id: "glsl-polar",
     domain: "glsl",
     title: "極座標",
-    summary: "角度 atan と半径 length で座標を取り直し、放射模様や花びらを描く。",
+    summary: "角度 atan と半径 length で座標を取り直し、放射模様や花びら、万華鏡を描く。",
     icon: "🌸",
     lessons: [
       {
@@ -895,6 +1088,36 @@ export const glslTracks: readonly Track[] = [
               "  float c = 1.0 - step(r, length(p));\n" +
               "  gl_FragColor = vec4(vec3(c), 1.0);\n}",
           ),
+        },
+      },
+      {
+        id: "glsl-kaleidoscope",
+        title: "万華鏡: 角度を折りたたむ",
+        explanation:
+          "<p>万華鏡は、鏡で区切った扇形の中身が、まわりに何度も映ってできる模様です。シェーダーでは<b>角度を折りたたんで</b>" +
+          "作れます。角度 <code>a</code> を <code>mod(a, seg)</code> で扇形 1つぶん（<code>seg</code> = 60°）に収め、" +
+          "<code>abs(a - seg * 0.5)</code> で扇形のまん中を鏡にして折り返します。折りたたんだ角度と距離 <code>r</code> から" +
+          "座標 <code>q</code> を作り直して模様を描けば、1つ描くだけで、まわりにいくつも映ります。</p>",
+        challenge: {
+          starterCode: sh(kaleidoscopeMain("  // ここで a を折りたたもう\n\n")),
+          task: "a を mod(a, seg) で扇形に収め、abs(a - seg * 0.5) で折り返して、花びらと玉をまわりに映した万華鏡にしよう。",
+          validators: [
+            { kind: "compiles" },
+            { kind: "sourceMatches", pattern: "mod\\s*\\(" },
+            // Copies of the 15° petal (at 135° and 255°) and of the 30° bead
+            // (at 180° and 300°) appear only once the angle is folded.
+            { kind: "pixelApprox", x: 0.28, y: 0.72, rgb: PETAL },
+            { kind: "pixelApprox", x: 0.42, y: 0.2, rgb: PETAL },
+            { kind: "pixelApprox", x: 0.35, y: 0.48, rgb: BEAD },
+            { kind: "pixelApprox", x: 0.58, y: 0.37, rgb: BEAD },
+            { kind: "pixelApprox", x: 0.48, y: 0.48, rgb: BLACK },
+            { kind: "pixelApprox", x: 0.96, y: 0.96, rgb: BLACK },
+          ],
+          hints: [
+            "a = mod(a, seg);",
+            "a = abs(a - seg * 0.5);  // 扇形のまん中を鏡に",
+          ],
+          solution: sh(kaleidoscopeMain("  a = mod(a, seg);           // 扇形 1つぶんに収める\n  a = abs(a - seg * 0.5);  // 扇形のまん中で折り返す\n")),
         },
       },
     ],
@@ -1051,7 +1274,7 @@ export const glslTracks: readonly Track[] = [
     id: "glsl-post",
     domain: "glsl",
     title: "仕上げのエフェクト",
-    summary: "ビネット・色ずれ・トーンマッピング・ガンマ補正。できた絵に後からかける仕上げの処理。",
+    summary: "ビネット・色ずれ・トーンマッピング・ガンマ補正・リニアな混色・ディザリング。できた絵に後からかける仕上げの処理。",
     icon: "📷",
     lessons: [
       {
@@ -1214,6 +1437,89 @@ export const glslTracks: readonly Track[] = [
               "  col = pow(col, vec3(1.0 / 2.2));\n" +
               "  gl_FragColor = vec4(col, 1.0);\n}",
           ),
+        },
+      },
+      {
+        id: "glsl-linear-mix",
+        title: "にごらないグラデーション: リニアで混ぜる",
+        explanation:
+          "<p>前のレッスンのとおり、画面の色の値は光の量に比例していません。その値のまま <code>mix</code> すると、" +
+          "赤と緑のまん中がおよそ <code>(0.55, 0.55, 0.1)</code> になり、光としては暗すぎる、にごった色になります。" +
+          "光として正しく混ぜるには、<code>pow(色, vec3(2.2))</code> で<b>リニア</b>な値に直してから <code>mix</code> し、" +
+          "最後に <code>pow(…, vec3(1.0 / 2.2))</code> で画面の色に戻します。下半分の見本と比べると、まん中が明るく" +
+          "澄んだ黄色になります。</p>",
+        challenge: {
+          starterCode: sh(linearMixMain("    // 上半分: ここをリニアで混ぜよう\n    col = mix(a, b, st.x);\n")),
+          task: "上半分は、a と b を pow(…, vec3(2.2)) でリニアに直してから mix し、pow(…, vec3(1.0 / 2.2)) で画面の色に戻そう。",
+          validators: [
+            { kind: "compiles" },
+            { kind: "sourceMatches", pattern: "pow" },
+            // The top half mixed as light: the middle is about 0.73 per channel
+            // instead of the muddy 0.55 of the bottom half. The endpoints are
+            // not pure 0/1, so decoding them matters: gamma-correcting only the
+            // mixed result lifts the blue channel to 0.35 and fails.
+            { kind: "pixelApprox", x: 0.27, y: 0.73, rgb: [0.87, 0.56, 0.1] },
+            { kind: "pixelApprox", x: 0.48, y: 0.73, rgb: [0.74, 0.72, 0.1] },
+            { kind: "pixelApprox", x: 0.73, y: 0.73, rgb: [0.56, 0.87, 0.1] },
+          ],
+          hints: [
+            "vec3 la = pow(a, vec3(2.2));  vec3 lb = pow(b, vec3(2.2));  // リニアに直す",
+            "col = pow(mix(la, lb, st.x), vec3(1.0 / 2.2));  // リニアで混ぜて、画面の色に戻す",
+          ],
+          solution: sh(
+            linearMixMain(
+              "    vec3 la = pow(a, vec3(2.2));  // 画面の色 → リニア\n" +
+                "    vec3 lb = pow(b, vec3(2.2));\n" +
+                "    col = pow(mix(la, lb, st.x), vec3(1.0 / 2.2));  // リニアで混ぜて、画面の色に戻す\n",
+            ),
+          ),
+        },
+      },
+      {
+        id: "glsl-dither",
+        title: "2色で濃淡を出す: ディザリング",
+        explanation:
+          "<p>色が 2つしか使えなくても、明るい色の点の<b>混み具合</b>で濃淡を表せます（昔の携帯ゲーム機や新聞の写真の手法）。" +
+          "マスごとに 0〜1 の<b>しきい値</b>を決めておき、明るさ <code>gray</code> がしきい値以上なら明るい色、未満なら暗い色に" +
+          "します。しきい値を規則正しく散らした表が<b>ベイヤー行列</b>（ここでは <code>bayer4</code>）で、明るい所ほど多くの" +
+          "マスが明るい色になります。<code>step(edge, x)</code> は <code>x</code> が <code>edge</code> 以上で 1 なので、" +
+          "そのまま使えます。</p>",
+        challenge: {
+          starterCode: sh(
+            BAYER_FN +
+              ditherMain(
+                "  // ここで gray としきい値 bayer4 を比べて、0 か 1 にしよう（いまは中間の値のまま）\n" +
+                  "  float c = gray;\n",
+              ),
+          ),
+          task: "c を step(bayer4(cell), gray) にして、グラデーションを 2色の点の混み具合で表そう。",
+          validators: [
+            { kind: "compiles" },
+            // bayer4 is declared above main(), so require the call inside it.
+            { kind: "sourceMatches", pattern: "main[\\s\\S]*bayer4\\s*\\(" },
+            { kind: "gradient", axis: "x", dir: "up" },
+            // Neighbouring cells in the middle of the ramp: each is exactly one
+            // of the two colours, light or dark as the Bayer threshold decides
+            // (|gray − threshold| ≥ 0.018 at every sampled pixel).
+            {
+              kind: "allOf",
+              of: [
+                { kind: "pixelApprox", x: 0.479, y: 0.479, rgb: DITHER_LIGHT },
+                { kind: "pixelApprox", x: 0.521, y: 0.479, rgb: DITHER_DARK },
+                { kind: "pixelApprox", x: 0.479, y: 0.521, rgb: DITHER_DARK },
+                { kind: "pixelApprox", x: 0.521, y: 0.521, rgb: DITHER_LIGHT },
+                { kind: "pixelApprox", x: 0.354, y: 0.5625, rgb: DITHER_LIGHT },
+                { kind: "pixelApprox", x: 0.396, y: 0.5625, rgb: DITHER_DARK },
+              ],
+              message:
+                "まだ中間の色が残っています。gray と bayer4(cell) を step で比べて、暗い色か明るい色のどちらかにしましょう",
+            },
+          ],
+          hints: [
+            "float c = step(bayer4(cell), gray);",
+            "gray がしきい値以上のマスだけが 1（明るい色）になります",
+          ],
+          solution: sh(BAYER_FN + ditherMain("  float c = step(bayer4(cell), gray);  // しきい値以上なら 1、未満なら 0\n")),
         },
       },
     ],

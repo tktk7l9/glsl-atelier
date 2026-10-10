@@ -45,6 +45,8 @@ export interface SceneObject {
   readonly visible: boolean;
   /** InstancedMesh.count — the number of copies drawn. Absent for plain objects. */
   readonly instances?: number;
+  /** The geometry's vertex count (its `position` attribute); absent without one. */
+  readonly vertices?: number;
 }
 
 /** Result of running a learner's Three.js scene code in the sandbox. */

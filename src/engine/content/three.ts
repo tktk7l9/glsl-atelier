@@ -245,6 +245,99 @@ const SKY_BLUE: [number, number, number] = [0.68, 0.85, 0.9];
  *  so every colour it draws is exactly 0.5 away from this. */
 const NORMAL_COLOURED: [number, number, number] = [0.5, 0.5, 0.5];
 
+/** The background lesson: a knot coloured by its normals. */
+const KNOT_SCENE =
+  "// 面の向きで色が変わる結び目\n" +
+  "const knot = new THREE.Mesh(\n" +
+  "  new THREE.TorusKnotGeometry(0.9, 0.3, 128, 24),\n" +
+  "  new THREE.MeshNormalMaterial(),\n" +
+  ");\n" +
+  "scene.add(knot);\n";
+
+/** The hemisphere lesson: a big white sphere, lit by `light`. */
+const HEMI_SCENE = (light: string): string =>
+  "// 白い球（MeshStandardMaterial は光が無いと真っ暗）\n" +
+  "const ball = new THREE.Mesh(\n" +
+  "  new THREE.SphereGeometry(1.8, 64, 32),\n" +
+  "  new THREE.MeshStandardMaterial({ color: 'white' }),\n" +
+  ");\n" +
+  "scene.add(ball);\n\n" +
+  light;
+
+/** The lookAt lesson: a target up high and an arrow whose tip points along
+ *  +Z. Both sit 0.25 left of centre, because the read-back column nearest
+ *  x = 0.5 lies 0.06 of the width left of it (0.18 world units at 1:1, 0.32
+ *  at 16:9), and the arrow's tip is narrow. */
+const ARROW_SCENE =
+  "// 的（まと）: 上のほうの金色の玉\n" +
+  "const target = new THREE.Mesh(\n" +
+  "  new THREE.SphereGeometry(0.35, 32, 16),\n" +
+  "  new THREE.MeshBasicMaterial({ color: 'gold' }),\n" +
+  ");\n" +
+  "target.position.set(-0.25, 2.3, 0);\n" +
+  "scene.add(target);\n\n" +
+  "// 矢印（円すい）。先端が +Z（手前）を向くように作ってある\n" +
+  "const geo = new THREE.ConeGeometry(0.8, 3, 32);\n" +
+  "geo.rotateX(Math.PI / 2);\n" +
+  "const arrow = new THREE.Mesh(geo, new THREE.MeshNormalMaterial());\n" +
+  "arrow.position.x = -0.25;\n" +
+  "scene.add(arrow);\n";
+
+/** The line lesson: a chart's values as points, shown as dots. */
+const CHART_SCENE =
+  "// 6 か月分の売り上げを、左から右へ並べた点にする（x: 月、y: 値）\n" +
+  "const values = [2, 3.5, 1.5, 4, 2.5, 3.2];\n" +
+  "const points = values.map((v, i) => new THREE.Vector3(i - 2.5, v - 2.5, 0));\n\n" +
+  "// 点を打つ\n" +
+  "const dots = new THREE.Points(\n" +
+  "  new THREE.BufferGeometry().setFromPoints(points),\n" +
+  "  new THREE.PointsMaterial({ color: 'gold', size: 0.25 }),\n" +
+  ");\n" +
+  "scene.add(dots);\n";
+
+/** The sprite lesson: a camera off to the side and three orbs made by `make`. */
+const ORBS_SCENE = (make: string): string =>
+  "// 横から見るカメラ\n" +
+  "camera.position.set(6, 0, 0);\n" +
+  "camera.lookAt(0, 0, 0);\n\n" +
+  "// 3つの光の玉\n" +
+  "const colors = ['gold', 'deepskyblue', 'hotpink'];\n" +
+  "colors.forEach((color, i) => {\n" +
+  make +
+  "  orb.position.set(0, (i - 1) * 1.6, 0);\n" +
+  "  scene.add(orb);\n" +
+  "});\n";
+
+/** The shadow-material lesson: a sky, a floating ball and a sun that casts
+ *  its shadow onto a floor made of `floorMaterial`. */
+const SKY_SHADOW_SCENE = (floorMaterial: string): string =>
+  "// 空の色の背景と、上から見下ろすカメラ\n" +
+  "scene.background = new THREE.Color('lightblue');\n" +
+  "camera.position.set(0, 6, 7);\n" +
+  "camera.lookAt(0, 0, 0);\n\n" +
+  "// 宙に浮いた球と、影を作る太陽\n" +
+  "const ball = new THREE.Mesh(\n" +
+  "  new THREE.SphereGeometry(1, 32, 16),\n" +
+  "  new THREE.MeshStandardMaterial({ color: 'tomato' }),\n" +
+  ");\n" +
+  "ball.position.y = 1.5;\n" +
+  "ball.castShadow = true;\n" +
+  "scene.add(ball);\n" +
+  "const sun = new THREE.DirectionalLight(0xffffff, 3);\n" +
+  "sun.position.set(0, 8, 3);\n" +
+  "sun.castShadow = true;\n" +
+  "scene.add(sun);\n" +
+  "renderer.shadowMap.enabled = true;\n\n" +
+  "// 床。いまは白い板が見えている\n" +
+  "const floor = new THREE.Mesh(\n" +
+  "  new THREE.PlaneGeometry(14, 14),\n" +
+  `  ${floorMaterial},\n` +
+  ");\n" +
+  "floor.rotation.x = -Math.PI / 2;\n" +
+  "floor.position.y = -1;\n" +
+  "floor.receiveShadow = true;\n" +
+  "scene.add(floor);\n";
+
 export const threeTracks: readonly Track[] = [
   {
     id: "three-basics",
@@ -334,6 +427,41 @@ export const threeTracks: readonly Track[] = [
             "const cube = new THREE.Mesh(geo, mat);\n" +
             "scene.add(cube);\n" +
             "cube.position.x = 2;\n",
+        },
+      },
+      {
+        id: "three-background",
+        title: "背景の色: scene.background",
+        explanation:
+          "<p>何も描かれていない場所の色は <code>scene.background</code> で決めます。<code>new THREE.Color('lightblue')</code> のように " +
+          "<b>Color</b> を入れるのがポイントで、色の文字列をそのまま入れても無視されます（画像のテクスチャを入れて背景にすることもできます）。" +
+          "<code>renderer.setClearColor(色)</code> で描画前の塗りつぶしの色を変えても同じように見えますが、シーンごとに背景を持たせるなら " +
+          "<code>scene.background</code> です。</p>",
+        challenge: {
+          starterCode: KNOT_SCENE + "\n// ここで、背景を空の色 'lightblue' にしよう\n",
+          task: "scene.background を THREE.Color の 'lightblue' にして、結び目の後ろを空の色にしよう。",
+          validators: [
+            { kind: "noError" },
+            { kind: "sourceMatches", pattern: "scene\\.background|setClearColor" },
+            { kind: "sceneHas", type: "Mesh" },
+            // The sky above and below the knot (a string left in
+            // scene.background changes nothing, so the dark clear colour stays).
+            {
+              kind: "pixelApprox",
+              x: 0.5,
+              y: 0.03,
+              rgb: SKY_BLUE,
+              tol: 0.1,
+              message: "背景がまだ暗いままです。scene.background に new THREE.Color('lightblue') を入れましょう（文字列のままでは効きません）",
+            },
+            { kind: "pixelApprox", x: 0.5, y: 0.97, rgb: SKY_BLUE, tol: 0.1 },
+            { kind: "rendersNonEmpty" },
+          ],
+          hints: [
+            "scene.background = new THREE.Color('lightblue');",
+            "文字列 'lightblue' をそのまま入れても変わりません。THREE.Color にしましょう",
+          ],
+          solution: KNOT_SCENE + "scene.background = new THREE.Color('lightblue');\n",
         },
       },
     ],
@@ -681,6 +809,65 @@ export const threeTracks: readonly Track[] = [
         },
       },
       {
+        id: "three-hemisphere-light",
+        title: "空と地面の光: HemisphereLight",
+        explanation:
+          "<p>屋外の光は、上から青い空の光、下から地面の照り返しが来ています。<code>HemisphereLight(空の色, 地面の色, 強さ)</code> は" +
+          "それを 1つで表すライトで、面が<b>上を向くほど空の色</b>、<b>下を向くほど地面の色</b>で照らされます。<code>AmbientLight</code> と同じく" +
+          "全体を照らしますが、上下で色が変わるので、のっぺりしません。強さは 3 くらいにすると、白い物がほぼ元の明るさで見えます。</p>",
+        challenge: {
+          starterCode: HEMI_SCENE(
+            "// いまは環境光だけ。上も下も同じ明るさで、のっぺりしている\n" +
+              "const light = new THREE.AmbientLight(0xffffff, 2);\n" +
+              "scene.add(light);\n",
+          ),
+          task: "AmbientLight を、空の色 'skyblue'・地面の色 'darkorange'・強さ 3 の HemisphereLight に替えて、球の上を空色、下をオレンジに照らそう。",
+          validators: [
+            { kind: "noError" },
+            { kind: "sourceMatches", pattern: "HemisphereLight" },
+            { kind: "sceneHas", type: "HemisphereLight" },
+            // Up the centre line (drawn the same by the ray-cast model in
+            // solvable.test.ts and by headless Chrome, to 0.01): the mix in
+            // the middle, the sky colour on top, the ground colour below.
+            // The ambient light kept as well washes everything out to white,
+            // intensity 1 leaves the ball at half the brightness, and the
+            // colours the wrong way round swap top and bottom.
+            {
+              kind: "pixelApprox",
+              x: 0.5,
+              y: 0.5,
+              rgb: [0.81, 0.67, 0.64],
+              tol: 0.12,
+              message: "明るさが目標と違います。強さを 3 にして、AmbientLight は外しましょう",
+            },
+            {
+              kind: "pixelApprox",
+              x: 0.5,
+              y: 0.78,
+              rgb: [0.63, 0.76, 0.83],
+              tol: 0.12,
+              message: "球の上が空の色になっていません。1つ目の色（空）を 'skyblue' にしましょう",
+            },
+            {
+              kind: "pixelApprox",
+              x: 0.5,
+              y: 0.22,
+              rgb: [0.92, 0.59, 0.4],
+              tol: 0.12,
+              message: "球の下が地面の色になっていません。2つ目の色（地面）を 'darkorange' にしましょう",
+            },
+          ],
+          hints: [
+            "const light = new THREE.HemisphereLight('skyblue', 'darkorange', 3);",
+            "AmbientLight の行は消して、HemisphereLight だけにします",
+          ],
+          solution: HEMI_SCENE(
+            "const light = new THREE.HemisphereLight('skyblue', 'darkorange', 3);  // 空の色・地面の色・強さ\n" +
+              "scene.add(light);\n",
+          ),
+        },
+      },
+      {
         id: "three-directional",
         title: "平行光源: DirectionalLight",
         explanation:
@@ -1012,6 +1199,44 @@ export const threeTracks: readonly Track[] = [
             "planet.position.x = 2;\n" +
             "sun.add(planet);\n" +
             "sun.rotation.z = Math.PI / 2;\n",
+        },
+      },
+      {
+        id: "three-look-at",
+        title: "的を向く: lookAt",
+        explanation:
+          "<p>カメラだけでなく、どのオブジェクトも <code>lookAt(x, y, z)</code>（または <code>lookAt(Vector3)</code>）で<b>その点のほうを向かせる</b>" +
+          "ことができます。回転の角度を自分で計算しなくても、向きたい位置を渡すだけです。向くのはオブジェクトの <b>+Z 軸</b>なので、" +
+          "矢印や目のような「先」のある形は、先端が +Z を向くように作っておきます（この円すいは <code>geo.rotateX</code> でそうしてあります）。" +
+          "渡すのは<b>位置</b>（<code>target.position</code>）で、オブジェクトそのものではありません。</p>",
+        challenge: {
+          starterCode: ARROW_SCENE + "\n// ここで、矢印の先端を的のほうへ向けよう\n",
+          task: "arrow.lookAt に的の位置 target.position を渡して、矢印の先端を的に向けよう。",
+          validators: [
+            { kind: "noError" },
+            { kind: "sourceMatches", pattern: "lookAt" },
+            { kind: "sceneHas", type: "Mesh", min: 2 },
+            // With the tip pointing up, the arrow's body crosses the centre
+            // line at 0.66 of the height (normal-coloured: 0.5 from mid-grey,
+            // while the background is 0.83 away); pointing at the camera it
+            // shows only its base, which ends at 0.6, and pointing down it is
+            // below the middle. lookAt(target) with the object itself leaves
+            // the matrix NaN and nothing is drawn.
+            {
+              kind: "pixelApprox",
+              x: 0.5,
+              y: 0.66,
+              rgb: NORMAL_COLOURED,
+              tol: 0.55,
+              message: "矢印が的のほうを向いていません。arrow.lookAt(target.position) で、的の位置（オブジェクトではなく position）を渡しましょう",
+            },
+            { kind: "pixelApprox", x: 0.5, y: 0.91, rgb: [1, 0.84, 0], tol: 0.15 },
+          ],
+          hints: [
+            "arrow.lookAt(target.position);",
+            "lookAt(target) とオブジェクトを渡すと、位置が読めずに矢印が消えてしまいます",
+          ],
+          solution: ARROW_SCENE + "arrow.lookAt(target.position);  // 先端（+Z）を的の位置に向ける\n",
         },
       },
       {
@@ -1693,6 +1918,104 @@ export const threeTracks: readonly Track[] = [
     ],
   },
   {
+    id: "three-lines-sprites",
+    domain: "three",
+    title: "線とスプライト",
+    summary: "点をつないで折れ線グラフを引き、いつもカメラを向くスプライトで光の玉やラベルを置く。",
+    icon: "📈",
+    lessons: [
+      {
+        id: "three-line",
+        title: "点をつないで線を引く: Line",
+        explanation:
+          "<p>折れ線グラフや軌跡のような<b>線</b>は <code>Line</code> で描きます。<code>new THREE.BufferGeometry().setFromPoints(点の配列)</code> で" +
+          "点をジオメトリにし、<code>LineBasicMaterial</code> と組み合わせると、点が順番に 1本の線でつながります。線の太さは WebGL ではほぼ必ず " +
+          "1 ピクセルなので、太い線が欲しいときは別の方法（細長い形など）を使います。最初と最後もつなぎたいときは <code>LineLoop</code>、" +
+          "2点ずつ別々の線にしたいときは <code>LineSegments</code> です。</p>",
+        challenge: {
+          starterCode: CHART_SCENE + "\n// ここで、points を順につなぐ水色の Line を作って scene に追加しよう\n",
+          task: "points から BufferGeometry を作り、LineBasicMaterial（色 'cyan'）の Line にして scene に追加し、点を折れ線でつなごう。",
+          validators: [
+            { kind: "noError" },
+            { kind: "sourceMatches", pattern: "LineBasicMaterial" },
+            {
+              kind: "anyOf",
+              of: [
+                { kind: "sceneHas", type: "Line" },
+                { kind: "sceneHas", type: "LineLoop" },
+              ],
+              message: "Line（または LineLoop）が scene にありません。new THREE.Line(ジオメトリ, マテリアル) を作って scene.add しましょう",
+            },
+            { kind: "materialOf", material: "LineBasicMaterial" },
+            // A 1 px line cannot be read back reliably, so the polyline is
+            // judged on its geometry: every one of the six points.
+            {
+              kind: "anyOf",
+              of: [
+                { kind: "verticesAtLeast", min: 6, type: "Line" },
+                { kind: "verticesAtLeast", min: 6, type: "LineLoop" },
+              ],
+              message: "線が 6個の点すべてを通っていません。new THREE.BufferGeometry().setFromPoints(points) で全部の点を渡しましょう",
+            },
+            // No pixel check: a 1 px line and the small dots can miss every
+            // sample of the smallest preview (measured at 341×192).
+            { kind: "colorApprox", rgb: [0, 1, 1], tol: 0.15 },
+          ],
+          hints: [
+            "const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), new THREE.LineBasicMaterial({ color: 'cyan' }));",
+            "scene.add(line);",
+          ],
+          solution:
+            CHART_SCENE +
+            "const line = new THREE.Line(\n" +
+            "  new THREE.BufferGeometry().setFromPoints(points),  // 点を順につなぐ\n" +
+            "  new THREE.LineBasicMaterial({ color: 'cyan' }),\n" +
+            ");\n" +
+            "scene.add(line);\n",
+        },
+      },
+      {
+        id: "three-sprite",
+        title: "いつもカメラを向く: Sprite",
+        explanation:
+          "<p><code>Sprite</code> は、<b>どこから見てもカメラのほうを向く</b>平らな絵です。光の玉やラベル、遠くの木など、立体にしなくてよいものに使います。" +
+          "<code>new THREE.Sprite(new THREE.SpriteMaterial({ color }))</code> で作り、位置は普通のオブジェクトと同じく <code>position</code> で決めます。" +
+          "大きさは <code>scale</code> で、初期値は 1×1 です。普通の板（<code>PlaneGeometry</code>）は向きが固定なので、横から見ると薄い線になって" +
+          "消えますが、Sprite は消えません。</p>",
+        challenge: {
+          starterCode: ORBS_SCENE(
+            "  // いまは正面（+Z）を向いた板。横から見ているので、薄い線になって見えない\n" +
+              "  const orb = new THREE.Mesh(\n" +
+              "    new THREE.PlaneGeometry(1, 1),\n" +
+              "    new THREE.MeshBasicMaterial({ color }),\n" +
+              "  );\n",
+          ),
+          task: "板の Mesh を、SpriteMaterial を使った Sprite に替えて、横から見ても 3つの玉が見えるようにしよう。",
+          validators: [
+            { kind: "noError" },
+            { kind: "sourceMatches", pattern: "SpriteMaterial" },
+            {
+              kind: "sceneHas",
+              type: "Sprite",
+              min: 3,
+              message: "Sprite が 3つありません。new THREE.Sprite(new THREE.SpriteMaterial({ color })) にしましょう",
+            },
+            // The three orbs up the centre line, seen from the side (the
+            // planes are edge-on there and draw nothing).
+            { kind: "pixelApprox", x: 0.5, y: 0.75, rgb: [1, 0.41, 0.71], tol: 0.15 },
+            { kind: "pixelApprox", x: 0.5, y: 0.5, rgb: [0, 0.75, 1], tol: 0.15 },
+            { kind: "pixelApprox", x: 0.5, y: 0.25, rgb: [1, 0.84, 0], tol: 0.15 },
+          ],
+          hints: [
+            "const orb = new THREE.Sprite(new THREE.SpriteMaterial({ color }));",
+            "Sprite にジオメトリは要りません。向きはいつもカメラのほうです",
+          ],
+          solution: ORBS_SCENE("  const orb = new THREE.Sprite(new THREE.SpriteMaterial({ color }));  // いつもカメラを向く\n"),
+        },
+      },
+    ],
+  },
+  {
     id: "three-atmosphere",
     domain: "three",
     title: "空気感: 霧と影",
@@ -1844,6 +2167,53 @@ export const threeTracks: readonly Track[] = [
             "sun.castShadow = true;\n" +
             "ball.castShadow = true;\n" +
             "floor.receiveShadow = true;\n",
+        },
+      },
+      {
+        id: "three-shadow-material",
+        title: "影だけを受ける床: ShadowMaterial",
+        explanation:
+          "<p><code>ShadowMaterial</code> は、<b>影の部分だけ</b>が描かれ、それ以外は透明になるマテリアルです。床を見せずに影だけを落としたいとき" +
+          "（空に浮かぶ物、AR のように背景の上に置く物）に使います。影を受けるには普通の床と同じく <code>receiveShadow</code> が要ります。" +
+          "<code>opacity</code> が影の濃さで、1 だと真っ黒、0.4 くらいが自然です。</p>",
+        challenge: {
+          starterCode:
+            SKY_SHADOW_SCENE("new THREE.MeshStandardMaterial({ color: 'white' })") +
+            "\n// 床のマテリアルを替えて、白い床を消し、影だけを空の上に残そう\n",
+          task: "床のマテリアルを opacity 0.4 の ShadowMaterial に替えて、白い床を消し、球の影だけを空の上に残そう。",
+          validators: [
+            { kind: "noError" },
+            { kind: "sourceMatches", pattern: "ShadowMaterial" },
+            { kind: "materialOf", material: "ShadowMaterial" },
+            { kind: "sceneHas", type: "DirectionalLight" },
+            // Measured in headless Chrome at 1:1 and 16:9: the sky where the
+            // floor was, the shadow at 0.6 of the sky's brightness right below
+            // the ball (black with the default opacity, the plain sky without
+            // receiveShadow; opacities 0.3–0.5 stay within the tolerance), and
+            // the lit ball above it.
+            {
+              kind: "pixelApprox",
+              x: 0.5,
+              y: 0.16,
+              rgb: SKY_BLUE,
+              tol: 0.1,
+              message: "床がまだ見えています。床のマテリアルを ShadowMaterial にして、影以外を透明にしましょう",
+            },
+            {
+              kind: "pixelApprox",
+              x: 0.5,
+              y: 0.47,
+              rgb: [0.41, 0.51, 0.54],
+              tol: 0.2,
+              message: "影の濃さが目標と違います。ShadowMaterial の opacity を 0.4 にして、floor の receiveShadow はそのまま残しましょう",
+            },
+            { kind: "pixelApprox", x: 0.5, y: 0.66, rgb: [0.9, 0.36, 0.27], tol: 0.15 },
+          ],
+          hints: [
+            "new THREE.ShadowMaterial({ opacity: 0.4 })",
+            "receiveShadow = true はそのまま。消すと影も消えます",
+          ],
+          solution: SKY_SHADOW_SCENE("new THREE.ShadowMaterial({ opacity: 0.4 })"),
         },
       },
     ],

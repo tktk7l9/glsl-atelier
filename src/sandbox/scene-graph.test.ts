@@ -65,4 +65,16 @@ describe("collectObjects (against the installed three)", () => {
     scene.add(new THREE.InstancedMesh(new THREE.BoxGeometry(), new THREE.MeshBasicMaterial(), 7));
     expect(collectObjects(scene)[0]).toMatchObject({ type: "Mesh", instances: 7 });
   });
+
+  it("reports the vertex count of a geometry, and none for an object without one", () => {
+    const scene = new THREE.Scene();
+    const points = [0, 1, 2, 3, 4, 5].map((i) => new THREE.Vector3(i, 0, 0));
+    scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), new THREE.LineBasicMaterial()));
+    scene.add(new THREE.Group(), new THREE.Sprite(new THREE.SpriteMaterial()));
+    const [line, group, sprite] = collectObjects(scene);
+    expect(line).toMatchObject({ type: "Line", geometry: "BufferGeometry", vertices: 6 });
+    expect(group.vertices).toBeUndefined();
+    // A sprite is drawn from the quad three shares between all sprites.
+    expect(sprite).toMatchObject({ type: "Sprite", material: "SpriteMaterial", vertices: 4 });
+  });
 });

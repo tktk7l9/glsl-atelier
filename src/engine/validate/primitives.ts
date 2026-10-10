@@ -70,6 +70,8 @@ export type ValidatorSpec =
   | (Base & { kind: "colorApprox"; rgb: RGB; type?: string })
   | (Base & { kind: "scaleApprox"; scale: Vec3; type?: string })
   | (Base & { kind: "instanced"; min: number })
+  /** Some object (of `type`) has a geometry with at least `min` vertices. */
+  | (Base & { kind: "verticesAtLeast"; min: number; type?: string })
   | (Base & { kind: "cameraPositioned"; position: Vec3 })
   | (Base & { kind: "rendersNonEmpty"; minVariance?: number });
 
@@ -97,6 +99,7 @@ type SceneSpec = Extract<
       | "colorApprox"
       | "scaleApprox"
       | "instanced"
+      | "verticesAtLeast"
       | "cameraPositioned"
       | "rendersNonEmpty";
   }
@@ -213,6 +216,12 @@ function dispatchScene(spec: SceneSpec, s: SceneSnapshot): ValidationResult {
       return best >= spec.min
         ? ok
         : fail(`${spec.min} 個以上を描く InstancedMesh が必要です（現在 ${best} 個）`);
+    }
+    case "verticesAtLeast": {
+      const best = pick(s.objects, spec.type).reduce((m, o) => Math.max(m, o.vertices ?? 0), 0);
+      return best >= spec.min
+        ? ok
+        : fail(`${spec.min} 個以上の点を持つ ${spec.type ?? "オブジェクト"} が必要です（現在 ${best} 個）`);
     }
     case "cameraPositioned": {
       if (!s.camera) return fail("カメラが見つかりません");

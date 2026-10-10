@@ -13,12 +13,13 @@
 // Three.js lessons: the starter and solution really run against the installed
 // `three` (so a renamed API would throw here), and the scene-graph validators
 // are judged on the resulting objects. Scenes made only of unlit things (basic
-// and emissive colours, data textures, points, plain alpha blending, fog, a
-// colour background, per-instance colours) are also "rendered" by casting a
-// ray through every sample with three's own Raycaster and camera maths, at
-// both preview shapes (1:1 and 16:9), so their pixel validators are judged
-// here too. Lit, shadowed and custom-shader scenes need a real GPU and are
-// left to the browser.
+// and emissive colours, data textures, points, sprites, plain alpha blending,
+// fog, a colour background, per-instance colours), or lit only by ambient and
+// hemisphere lights (which depend on the normal alone), are also "rendered"
+// by casting a ray through every sample with three's own Raycaster and camera
+// maths, at both preview shapes (1:1 and 16:9), so their pixel validators are
+// judged here too. Directly lit, shadowed and custom-shader scenes need a real
+// GPU and are left to the browser.
 
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
@@ -148,6 +149,7 @@ function cellular(x: number, y: number, reach: 0 | 1): RGB {
 }
 
 const rgb = (c: readonly number[]): RGB => [c[0], c[1], c[2]];
+const WHITE3: RGB = [1, 1, 1];
 
 /** The tone-mapping lesson's HDR ramp after Reinhard, `hdr / (1 + hdr)`. */
 const reinhard = (x: number): RGB => rgb([1, 0.6, 0.3].map((c) => (c * x * 8) / (1 + c * x * 8)));
@@ -358,6 +360,39 @@ function truchet(x: number, y: number, flips: (ix: number, iy: number, x: number
   return mixRgb([0.05, 0.08, 0.2], [0.95, 0.85, 0.6], 1 - step(0.13, d));
 }
 
+/** The spiral lesson's rays, `wave` giving the cosine's argument from the
+ *  angle and the radius. */
+function spiral(x: number, y: number, wave: (a: number, r: number) => number): RGB {
+  const [px, py] = centred(x, y);
+  return grey(step(0, Math.cos(wave(Math.atan2(py, px), length(px, py)))));
+}
+
+/** The filter track's picture: a sky gradient, a sun and a hill. */
+function picture(ux: number, uy: number): RGB {
+  let col = mixRgb([0.15, 0.3, 0.7], [0.6, 0.85, 1], uy);
+  col = mixRgb(col, [0.95, 0.9, 0.45], 1 - step(0.16, length(ux - 0.6875, uy - 0.6875)));
+  return mixRgb(col, [0.1, 0.4, 0.15], 1 - step(0.3 + 0.1 * Math.sin(ux * 6), uy));
+}
+
+/** A filter lesson: `filter` applied to the picture at the pixel. */
+const filtered = (x: number, y: number, filter: (c: RGB) => RGB): RGB => filter(picture(x, y));
+const weighted = (c: RGB, w: RGB): RGB => grey(c[0] * w[0] + c[1] * w[1] + c[2] * w[2]);
+/** The sepia matrix as rows (the GLSL writes the same numbers as columns). */
+const SEPIA: readonly RGB[] = [
+  [0.393, 0.769, 0.189],
+  [0.349, 0.686, 0.168],
+  [0.272, 0.534, 0.131],
+];
+const matrix = (m: readonly RGB[], c: RGB): RGB => rgb(m.map((row) => row[0] * c[0] + row[1] * c[1] + row[2] * c[2]));
+const transposed = (m: readonly RGB[]): RGB[] => [0, 1, 2].map((i) => rgb(m.map((row) => row[i])));
+const levels = (c: RGB, n: number, round = Math.floor): RGB => rgb(c.map((v) => round(v * n) / n));
+/** The mosaic lesson: the picture read at the coordinate `coarse` makes of the pixel's. */
+const mosaic = (x: number, y: number, coarse: (v: number) => number): RGB => picture(coarse(x), coarse(y));
+/** The scanline lesson: the picture darkened by `dim` (0..1) on the rows
+ *  `dark` picks out of the pixel row gl_FragCoord.y = y * SIZE. */
+const scanned = (x: number, y: number, dark: (row: number) => boolean, dim = 0.5): RGB =>
+  rgb(picture(x, y).map((c) => c * (dark(y * SIZE) ? dim : 1)));
+
 /** JS ports of (starter, solution) for the shader lessons added in 2026-10. */
 const SHADER_MODELS: Record<string, { starter: Shade; solution: Shade }> = {
   "glsl-repeat-dots": {
@@ -533,6 +568,30 @@ const SHADER_MODELS: Record<string, { starter: Shade; solution: Shade }> = {
     starter: (x, y) => truchet(x, y, () => false),
     solution: (x, y) => truchet(x, y, (ix, iy) => random(ix, iy) > 0.5),
   },
+  "glsl-spiral": {
+    starter: (x, y) => spiral(x, y, (a) => a * 3),
+    solution: (x, y) => spiral(x, y, (a, r) => a * 3 + r * 8),
+  },
+  "glsl-grayscale": {
+    starter: (x, y) => picture(x, y),
+    solution: (x, y) => filtered(x, y, (c) => weighted(c, [0.2126, 0.7152, 0.0722])),
+  },
+  "glsl-sepia": {
+    starter: (x, y) => picture(x, y),
+    solution: (x, y) => filtered(x, y, (c) => matrix(SEPIA, c)),
+  },
+  "glsl-posterize": {
+    starter: (x, y) => picture(x, y),
+    solution: (x, y) => filtered(x, y, (c) => levels(c, 4)),
+  },
+  "glsl-mosaic": {
+    starter: (x, y) => picture(x, y),
+    solution: (x, y) => mosaic(x, y, (v) => Math.floor(v * 8) / 8),
+  },
+  "glsl-scanlines": {
+    starter: (x, y) => picture(x, y),
+    solution: (x, y) => scanned(x, y, (row) => glslMod(row, 4) < 2),
+  },
 };
 
 describe("shader lessons modelled on the grader's sample grid", () => {
@@ -606,6 +665,47 @@ const SHADER_NEAR_MISSES: Record<string, ReadonlyArray<readonly [string, Shade]>
     ["every tile flipped", (x, y) => truchet(x, y, () => true)],
     ["a random flip per pixel, not per tile", (x, y) => truchet(x, y, (_ix, _iy, px, py) => random(px * 6, py * 6) > 0.5)],
   ],
+  // 2026-10, fifth batch.
+  "glsl-spiral": [
+    ["too little twist (r * 2)", (x, y) => spiral(x, y, (a, r) => a * 3 + r * 2)],
+    ["too much twist (r * 16)", (x, y) => spiral(x, y, (a, r) => a * 3 + r * 16)],
+    ["the angle multiplied by the radius", (x, y) => spiral(x, y, (a, r) => a * 3 * r * 8)],
+    ["rings (the radius alone)", (x, y) => spiral(x, y, (_a, r) => r * 8)],
+    ["all white", () => WHITE3],
+  ],
+  "glsl-grayscale": [
+    ["the plain average (r + g + b) / 3", (x, y) => filtered(x, y, (c) => weighted(c, [1 / 3, 1 / 3, 1 / 3]))],
+    ["the green channel alone", (x, y) => filtered(x, y, (c) => weighted(c, [0, 1, 0]))],
+    ["the red channel alone", (x, y) => filtered(x, y, (c) => weighted(c, [1, 0, 0]))],
+    ["weights that add up to more than 1 (0.3, 0.8, 0.1)", (x, y) => filtered(x, y, (c) => weighted(c, [0.3, 0.8, 0.1]))],
+  ],
+  "glsl-sepia": [
+    ["the matrix written row by row (transposed)", (x, y) => filtered(x, y, (c) => matrix(transposed(SEPIA), c))],
+    ["grey tinted brown", (x, y) => filtered(x, y, (c) => rgb(weighted(c, [0.2126, 0.7152, 0.0722]).map((v, i) => v * [1, 0.85, 0.6][i])))],
+    ["grey", (x, y) => filtered(x, y, (c) => weighted(c, [0.2126, 0.7152, 0.0722]))],
+  ],
+  "glsl-posterize": [
+    ["8 levels", (x, y) => filtered(x, y, (c) => levels(c, 8))],
+    ["2 levels", (x, y) => filtered(x, y, (c) => levels(c, 2))],
+    ["round instead of floor", (x, y) => filtered(x, y, (c) => levels(c, 4, Math.round))],
+    ["ceil instead of floor", (x, y) => filtered(x, y, (c) => levels(c, 4, Math.ceil))],
+    ["levels on the luminance only", (x, y) => filtered(x, y, (c) => levels(weighted(c, [0.2126, 0.7152, 0.0722]), 4))],
+  ],
+  "glsl-mosaic": [
+    ["6 cells (the cells straddle the 1/8 grid)", (x, y) => mosaic(x, y, (v) => Math.floor(v * 6) / 6)],
+    ["round (half a cell off)", (x, y) => mosaic(x, y, (v) => Math.round(v * 8) / 8)],
+    ["fract instead of floor", (x, y) => mosaic(x, y, (v) => fract(v * 8))],
+    ["floor without dividing back", (x, y) => mosaic(x, y, (v) => Math.floor(v * 8))],
+    ["coarse along x only", (x, y) => picture(Math.floor(x * 8) / 8, y)],
+  ],
+  "glsl-scanlines": [
+    ["a 2 px period (odd rows dark)", (x, y) => scanned(x, y, (row) => glslMod(row, 2) >= 1)],
+    ["a 2 px period (even rows dark)", (x, y) => scanned(x, y, (row) => glslMod(row, 2) < 1)],
+    ["an 8 px period", (x, y) => scanned(x, y, (row) => glslMod(row, 8) < 4)],
+    ["everything darkened", (x, y) => scanned(x, y, () => true)],
+    ["vertical lines", (x, y) => rgb(picture(x, y).map((c) => c * (glslMod(x * SIZE, 4) < 2 ? 0.5 : 1)))],
+    ["lines too dark (0.3)", (x, y) => scanned(x, y, (row) => glslMod(row, 4) < 2, 0.3)],
+  ],
 };
 
 describe("shader near misses are rejected", () => {
@@ -614,6 +714,32 @@ describe("shader near misses are rejected", () => {
       it(`${id}: ${label}`, () => {
         const { validators, solution } = lessonById(id)!.challenge;
         expect(evaluate(validators, shaderSnapshot(solution, shade)).passed).toBe(false);
+      });
+    }
+  }
+});
+
+/** Other correct ways to write the fifth-batch shader lessons; each must pass
+ *  (lenient input, SHIG 50). */
+const SHADER_VARIANTS: Record<string, ReadonlyArray<readonly [string, Shade]>> = {
+  "glsl-spiral": [["the mirror image (a * 3.0 - r * 8.0)", (x, y) => spiral(x, y, (a, r) => a * 3 - r * 8)]],
+  "glsl-grayscale": [["the Rec.601 weights (0.299, 0.587, 0.114)", (x, y) => filtered(x, y, (c) => weighted(c, [0.299, 0.587, 0.114]))]],
+  "glsl-posterize": [["floor(col * 4.0) * 0.25", (x, y) => filtered(x, y, (c) => rgb(c.map((v) => Math.floor(v * 4) * 0.25)))]],
+  "glsl-mosaic": [["the cell centres, (floor + 0.5) / 8", (x, y) => mosaic(x, y, (v) => (Math.floor(v * 8) + 0.5) / 8)]],
+  "glsl-scanlines": [
+    ["the opposite phase (the upper two rows dark)", (x, y) => scanned(x, y, (row) => glslMod(row, 4) >= 2)],
+    ["fract(st.y * 32.0) < 0.5", (x, y) => scanned(x, y, (row) => fract((row + 0.5) / 4) < 0.5)],
+    ["lines at 0.4", (x, y) => scanned(x, y, (row) => glslMod(row, 4) < 2, 0.4)],
+    ["lines at 0.6", (x, y) => scanned(x, y, (row) => glslMod(row, 4) < 2, 0.6)],
+  ],
+};
+
+describe("shader variants are accepted", () => {
+  for (const [id, variants] of Object.entries(SHADER_VARIANTS)) {
+    for (const [label, shade] of variants) {
+      it(`${id}: ${label}`, () => {
+        const { validators, solution } = lessonById(id)!.challenge;
+        expect(evaluate(validators, shaderSnapshot(solution, shade)).failures).toEqual([]);
       });
     }
   }
@@ -642,7 +768,9 @@ interface RendererState {
   shadowMap: { enabled: boolean; type: THREE.ShadowMapType };
   localClippingEnabled: boolean;
   clippingPlanes: THREE.Plane[];
-  setClearColor(): void;
+  /** What the frame is cleared to when the scene has no Color background. */
+  clearColor: THREE.Color;
+  setClearColor(color: THREE.ColorRepresentation): void;
 }
 
 interface SceneRun {
@@ -689,7 +817,10 @@ function execScene(code: string, aspect = 1): SceneRun {
     shadowMap: { enabled: false, type: THREE.PCFShadowMap },
     localClippingEnabled: false,
     clippingPlanes: [],
-    setClearColor() {},
+    clearColor: new THREE.Color(0x05060d),
+    setClearColor(color) {
+      this.clearColor.set(color);
+    },
   };
   let error: string | null = null;
   // Lesson code may draw on a canvas (CanvasTexture); Node has no DOM.
@@ -732,15 +863,37 @@ const srgbToLinear = (c: number): number => (c <= 0.04045 ? c / 12.92 : Math.pow
 const sampleable = (map: THREE.Texture): boolean =>
   map instanceof THREE.DataTexture || (map instanceof THREE.CanvasTexture && map.image instanceof FakeCanvas);
 
-/** Can the flat model shade `m` without lighting maths? Basic colours (plain
- *  or textured), normal colours, and standard materials in a scene with no
- *  light, which then show nothing but their emission. */
-function flatShadable(m: THREE.Material, lit: boolean): boolean {
+/** Can the flat model shade `m` without a real GPU? Basic colours (plain or
+ *  textured), normal colours, sprites, and standard materials in a scene with
+ *  no directional light, which then show their emission plus the ambient and
+ *  hemisphere light that falls on their normal. */
+function flatShadable(m: THREE.Material, directLit: boolean): boolean {
   if (m instanceof THREE.MeshBasicMaterial) return !m.wireframe && (m.map === null || sampleable(m.map));
   if (m instanceof THREE.MeshNormalMaterial) return !m.wireframe && !m.flatShading && !m.normalMap && !m.bumpMap;
-  if (m instanceof THREE.MeshStandardMaterial) return !lit && !m.map && !m.emissiveMap;
+  if (m instanceof THREE.MeshStandardMaterial) return !directLit && !m.map && !m.emissiveMap && !m.wireframe;
   if (m instanceof THREE.PointsMaterial) return !m.map && !m.vertexColors && m.sizeAttenuation;
+  if (m instanceof THREE.SpriteMaterial) return !m.map && m.sizeAttenuation;
   return false;
+}
+
+/** Lights the model can apply: those that depend on the normal alone. */
+const soft = (l: THREE.Object3D): boolean => l instanceof THREE.AmbientLight || l instanceof THREE.HemisphereLight;
+
+/** The irradiance at a world normal `n` from the scene's ambient and
+ *  hemisphere lights, as three's shaders sum it: each light's colour times
+ *  its intensity, a hemisphere light blending ground to sky by
+ *  0.5 + 0.5 · (n · direction), the direction being its position. */
+function softIrradiance(lights: readonly THREE.Light[], n: THREE.Vector3): THREE.Color {
+  const e = new THREE.Color(0, 0, 0);
+  for (const l of lights) {
+    if (l instanceof THREE.HemisphereLight) {
+      const dir = new THREE.Vector3().setFromMatrixPosition(l.matrixWorld).normalize();
+      e.add(l.groundColor.clone().lerp(l.color, 0.5 + 0.5 * n.dot(dir)).multiplyScalar(l.intensity));
+    } else {
+      e.add(l.color.clone().multiplyScalar(l.intensity));
+    }
+  }
+  return e;
 }
 
 /** The texel under `uv` as a linear colour. The lessons sample well inside
@@ -788,12 +941,23 @@ function instanceTint(hit: THREE.Intersection | undefined): RGB {
 }
 
 /** The colour (as written to the canvas) of a flat-shadable surface where
- *  `hit` lands (undefined for a point of a Points object). */
-function flatColor(m: THREE.Material, hit: THREE.Intersection | undefined): RGB {
+ *  `hit` lands (undefined for a point of a Points object), under the scene's
+ *  ambient and hemisphere `lights`. */
+function flatColor(m: THREE.Material, hit: THREE.Intersection | undefined, lights: readonly THREE.Light[] = []): RGB {
   if (m instanceof THREE.MeshStandardMaterial) {
     const e = m.emissive;
     const k = m.emissiveIntensity;
-    return encode(e.r * k, e.g * k, e.b * k);
+    const out = [e.r * k, e.g * k, e.b * k];
+    if (lights.length > 0 && hit) {
+      // Lambert: the diffuse colour (less its metalness) over π, times the irradiance.
+      const n = (hit.normal as THREE.Vector3).clone().transformDirection(hit.object.matrixWorld);
+      const irradiance = softIrradiance(lights, n);
+      const diffuse = (1 - m.metalness) / Math.PI;
+      out[0] += m.color.r * diffuse * irradiance.r;
+      out[1] += m.color.g * diffuse * irradiance.g;
+      out[2] += m.color.b * diffuse * irradiance.b;
+    }
+    return encode(out[0], out[1], out[2]);
   }
   const { color, map } = m as THREE.MeshBasicMaterial;
   const [tr, tg, tb] = instanceTint(hit);
@@ -835,25 +999,29 @@ function clipped(renderer: RendererState, material: THREE.Material, point: THREE
   return planes.some((plane) => plane.distanceToPoint(point) < 0);
 }
 
-/** The read-back grid of an unlit scene, found by ray casting the pixels the
- *  runner samples (preview `aspect`, 360 px tall), or null when the scene holds
- *  anything this model cannot shade (lights on lit materials, shader
- *  materials, lines, a textured background…). */
+/** The read-back grid of an unlit (or softly lit) scene, found by ray casting
+ *  the pixels the runner samples (preview `aspect`, 360 px tall), or null when
+ *  the scene holds anything this model cannot shade (directional lights on lit
+ *  materials, shader materials, lines, a textured background…). */
 function flatRender({ scene, camera, renderer }: SceneRun, aspect: number): Sample[] | null {
   const background = scene.background;
-  if (background !== null && !(background instanceof THREE.Color)) return null;
-  // A Color background is the clear colour, as written (sRGB).
-  const clear = background ? srgbOf(background) : CLEAR;
+  if (background instanceof THREE.Texture) return null;
+  // A Color background is the clear colour, as written (sRGB); anything else
+  // (a colour name left as a string) three ignores, and the renderer's own
+  // clear colour shows.
+  const clear = srgbOf(background instanceof THREE.Color ? background : renderer.clearColor);
   scene.updateMatrixWorld(true);
   camera.updateMatrixWorld(true);
-  const lit = scene.getObjectsByProperty("isLight", true).length > 0;
+  const lights = (scene.getObjectsByProperty("isLight", true) as THREE.Light[]).filter(drawn);
+  const directLit = lights.some((l) => !soft(l));
+  const softLights = lights.filter(soft);
   const points: THREE.Points[] = [];
   let shadable = true;
   scene.traverse((o) => {
     if (o === scene || o instanceof THREE.Group || o instanceof THREE.Light) return;
     const material = (o as THREE.Mesh).material;
-    if ((o instanceof THREE.Mesh || o instanceof THREE.Points) && !Array.isArray(material)) {
-      shadable &&= flatShadable(material, lit);
+    if ((o instanceof THREE.Mesh || o instanceof THREE.Points || o instanceof THREE.Sprite) && !Array.isArray(material)) {
+      shadable &&= flatShadable(material, directLit);
       if (o instanceof THREE.Points) points.push(o);
     } else {
       shadable = false;
@@ -888,7 +1056,7 @@ function flatRender({ scene, camera, renderer }: SceneRun, aspect: number): Samp
         const key = `${hit.object.uuid}:${hit.instanceId ?? ""}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        const colour = m instanceof THREE.MeshNormalMaterial ? normalColor(hit, camera) : flatColor(m, hit);
+        const colour = m instanceof THREE.MeshNormalMaterial ? normalColor(hit, camera) : flatColor(m, hit, softLights);
         layers.push([hit.distance, fogged(scene, camera, m, hit.point, colour), alphaOf(m)]);
       }
       // A point is a screen-aligned square, size / (2 · depth) NDC high on
@@ -942,21 +1110,47 @@ describe("Three.js lessons run against the installed three", () => {
   }
 });
 
-/** The lessons whose scenes are unlit, so the flat model can draw them. */
+/** Wrong answers to the polyline lesson, judged on the scene graph alone (a
+ *  line is never pixel-judged); each must fail, and a LineLoop must pass. */
+describe("the polyline lesson is judged on its geometry", () => {
+  const { validators, solution } = lessonById("three-line")!.challenge;
+  const judged = validators.filter((v) => !readsPixels(v));
+  const cases: ReadonlyArray<readonly [string, string, boolean]> = [
+    ["only the first two points", solution.replace("setFromPoints(points),  // 点を順につなぐ", "setFromPoints(points.slice(0, 2)),"), false],
+    ["LineSegments (every other gap missing)", solution.replace("new THREE.Line(", "new THREE.LineSegments("), false],
+    ["a MeshBasicMaterial on the line", solution.replace("new THREE.LineBasicMaterial({ color: 'cyan' })", "new THREE.MeshBasicMaterial({ color: 'cyan' }) // LineBasicMaterial"), false],
+    ["the dots alone (the starter)", solution.replace(/const line[\s\S]*$/, "// LineBasicMaterial\n"), false],
+    ["a LineLoop through every point", solution.replace("new THREE.Line(", "new THREE.LineLoop("), true],
+  ];
+  for (const [label, code, passes] of cases) {
+    it(`${label}: ${passes ? "accepted" : "rejected"}`, () => {
+      expect(code).not.toBe(solution);
+      const snap = runScene(code);
+      expect(snap.error).toBeNull();
+      expect(evaluate(judged, snap).passed).toBe(passes);
+    });
+  }
+});
+
+/** The lessons whose scenes are unlit or softly lit, so the flat model can draw them. */
 const FLAT_LESSONS = [
   "three-first-mesh",
   "three-color",
   "three-position",
+  "three-background",
   "three-sphere",
   "three-torus",
   "three-plane",
   "three-normal-material",
   "three-transparent",
   "three-clipping",
+  "three-ambient",
+  "three-hemisphere-light",
   "three-emissive",
   "three-scale",
   "three-group",
   "three-hierarchy",
+  "three-look-at",
   "three-instanced",
   "three-instance-color",
   "three-camera-back",
@@ -972,6 +1166,7 @@ const FLAT_LESSONS = [
   "three-lathe",
   "three-extrude",
   "three-tube",
+  "three-sprite",
   "three-fog",
   "three-fog-exp2",
 ];
@@ -979,10 +1174,19 @@ const FLAT_LESSONS = [
 describe("unlit Three.js lessons judged on a ray-cast frame, pixels included", () => {
   const threeLessons = LESSONS.filter((l) => l.id.startsWith("three-"));
 
-  it("draws exactly the unlit lessons (the rest need a GPU)", () => {
-    const rendered = threeLessons.filter((l) => flatRender(execScene(l.challenge.solution), 1) !== null);
-    expect(rendered.map((l) => l.id)).toEqual(FLAT_LESSONS);
+  // Exactly the unlit and softly lit lessons are drawn (the rest need a GPU):
+  // one test per lesson, since rendering all of them in one test ran past
+  // the 5 s limit on the CI runner.
+  it("lists the drawable lessons in catalogue order", () => {
+    expect(FLAT_LESSONS).toEqual(threeLessons.map((l) => l.id).filter((id) => FLAT_LESSONS.includes(id)));
   });
+
+  for (const lesson of threeLessons) {
+    const drawable = FLAT_LESSONS.includes(lesson.id);
+    it(`${lesson.id}: ${drawable ? "drawn by the model" : "needs a GPU"}`, () => {
+      expect(flatRender(execScene(lesson.challenge.solution), 1) !== null).toBe(drawable);
+    });
+  }
 
   for (const id of FLAT_LESSONS) {
     const { validators, starterCode, solution } = lessonById(id)!.challenge;
@@ -1054,7 +1258,63 @@ const SCENE_NEAR_MISSES: Record<string, ReadonlyArray<readonly [string, (solutio
     ["density 0.3 (too thick)", (s) => s.replace("'lightblue', 0.12", "'lightblue', 0.3")],
     ["a white fog against the blue sky", (s) => s.replace("FogExp2('lightblue'", "FogExp2('white'")],
   ],
+  // 2026-10, fifth batch.
+  "three-background": [
+    ["the colour name left as a string (three ignores it)", (s) => s.replace("new THREE.Color('lightblue')", "'lightblue'")],
+    ["a dark colour", (s) => s.replace("'lightblue'", "'navy'")],
+  ],
+  "three-hemisphere-light": [
+    ["the sky and ground colours the wrong way round", (s) => s.replace("'skyblue', 'darkorange'", "'darkorange', 'skyblue'")],
+    ["the ambient light kept as well (washed out)", (s) => s.replace("scene.add(light);", "scene.add(light, new THREE.AmbientLight(0xffffff, 2));")],
+    ["intensity 1 (half as bright)", (s) => s.replace("'darkorange', 3)", "'darkorange', 1)")],
+    ["intensity 6 (blown out)", (s) => s.replace("'darkorange', 3)", "'darkorange', 6)")],
+  ],
+  "three-look-at": [
+    ["lookAt(target) with the object instead of its position (NaN, nothing drawn)", (s) => s.replace("lookAt(target.position)", "lookAt(target)")],
+    ["the target made to look at the arrow", (s) => s.replace("arrow.lookAt(target.position)", "target.lookAt(arrow.position)")],
+    ["the arrow looking at the origin (its own place, so it keeps facing the camera)", (s) => s.replace("lookAt(target.position)", "lookAt(0, 0, 0)")],
+  ],
+  "three-sprite": [
+    [
+      "the planes turned to the camera by hand",
+      (s) =>
+        s.replace(
+          "new THREE.Sprite(new THREE.SpriteMaterial({ color }))",
+          "new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ color }));\n  orb.lookAt(camera.position); // SpriteMaterial",
+        ),
+    ],
+  ],
 };
+
+/** Other correct ways to write the fifth-batch unlit scene lessons; each must
+ *  pass at both preview shapes (lenient input, SHIG 50). */
+const SCENE_VARIANTS: Record<string, ReadonlyArray<readonly [string, (solution: string) => string]>> = {
+  "three-background": [
+    ["renderer.setClearColor instead", (s) => s.replace("scene.background = new THREE.Color('lightblue');", "renderer.setClearColor('lightblue'); // scene.background")],
+    ["the colour as a hex number", (s) => s.replace("'lightblue'", "0xadd8e6")],
+  ],
+  "three-hemisphere-light": [["hex colours", (s) => s.replace("'skyblue', 'darkorange'", "0x87ceeb, 0xff8c00")]],
+  "three-look-at": [["lookAt(x, y, z)", (s) => s.replace("lookAt(target.position)", "lookAt(-0.25, 2.3, 0)")]],
+  "three-sprite": [["scaled to 1.2", (s) => s.replace("orb.position.set", "orb.scale.set(1.2, 1.2, 1);\n  orb.position.set")]],
+};
+
+describe("unlit scene variants are accepted", () => {
+  for (const [id, variants] of Object.entries(SCENE_VARIANTS)) {
+    const { validators, solution } = lessonById(id)!.challenge;
+    for (const [label, edit] of variants) {
+      it(`${id}: ${label}`, () => {
+        const code = edit(solution);
+        expect(code).not.toBe(solution);
+        for (const aspect of [1, 16 / 9]) {
+          const run = execScene(code, aspect);
+          const frame = flatRender(run, aspect);
+          expect(frame).not.toBeNull();
+          expect(evaluate(validators, { ...run.snapshot, samples: frame! }).failures).toEqual([]);
+        }
+      });
+    }
+  }
+});
 
 describe("unlit scene near misses are rejected", () => {
   for (const [id, misses] of Object.entries(SCENE_NEAR_MISSES)) {
@@ -1087,18 +1347,58 @@ describe("the flat model itself", () => {
     expect(at(frameOf("")!, 0.5, 0.5)).toEqual(CLEAR.map((c) => Math.round(c * 255) / 255));
   });
 
-  it("refuses scenes that need lighting, other materials or a textured background", () => {
+  it("refuses scenes that need directional lighting, other materials or a textured background", () => {
     const ball = "new THREE.Mesh(new THREE.SphereGeometry(1, 16, 8), MAT)";
-    const lit = "scene.add(new THREE.AmbientLight(0xffffff, 1));\n";
+    const lit = "scene.add(new THREE.DirectionalLight(0xffffff, 1));\n";
     expect(frameOf(`scene.add(${ball.replace("MAT", "new THREE.ShaderMaterial()")});`)).toBeNull();
     expect(frameOf(`scene.add(${ball.replace("MAT", "new THREE.MeshNormalMaterial({ flatShading: true })")});`)).toBeNull();
     expect(frameOf(`scene.add(${ball.replace("MAT", "new THREE.MeshStandardMaterial()")});${lit}`)).toBeNull();
+    expect(frameOf(`scene.add(${ball.replace("MAT", "new THREE.MeshStandardMaterial({ wireframe: true })")});`)).toBeNull();
     expect(frameOf(`scene.add(${ball.replace("MAT", "new THREE.MeshBasicMaterial({ wireframe: true })")});`)).toBeNull();
     expect(frameOf("scene.background = new THREE.Texture();")).toBeNull();
     expect(frameOf("scene.add(new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial()));")).toBeNull();
     expect(
       frameOf("scene.add(new THREE.Points(new THREE.BufferGeometry(), new THREE.PointsMaterial({ sizeAttenuation: false })));"),
     ).toBeNull();
+    expect(frameOf("scene.add(new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.Texture() })));")).toBeNull();
+  });
+
+  it("lights a standard material by ambient and hemisphere light alone, over π (as three does)", () => {
+    const white = wall("MeshStandardMaterial({ color: 'white' })");
+    // Ambient 1 on white: 1 / π = 0.318 linear → 0.60 on screen.
+    expect(at(frameOf(white + "scene.add(new THREE.AmbientLight(0xffffff, 1));")!, 0.5, 0.5)[0]).toBeCloseTo(0.6, 1);
+    // A hemisphere light with its direction straight up on a wall facing the
+    // camera (normal · up = 0) gives the average of sky and ground; a wall
+    // facing up gets the sky colour alone.
+    const hemi = "scene.add(new THREE.HemisphereLight(0xffffff, 0x000000, Math.PI));";
+    expect(at(frameOf(white + hemi)!, 0.5, 0.5)[0]).toBeCloseTo(linearToSrgb(0.5), 2);
+    const up = "const w = scene.children[0]; w.rotation.x = -Math.PI / 2; w.position.y = -1; camera.position.set(0, 3, 0.01); camera.lookAt(0, -1, 0);";
+    expect(at(frameOf(white + hemi + up)!, 0.5, 0.5)[0]).toBe(1);
+    // A metal reflects no diffuse light; the emission is still added.
+    const metal = wall("MeshStandardMaterial({ color: 'white', metalness: 1, emissive: 0x404040 })");
+    expect(at(frameOf(metal + hemi)!, 0.5, 0.5)[0]).toBeCloseTo(64 / 255, 2);
+    // A hidden light does not count.
+    expect(at(frameOf(white + "const l = new THREE.AmbientLight(0xffffff, 1); l.visible = false; scene.add(l);")!, 0.5, 0.5)[0]).toBe(0);
+  });
+
+  it("draws sprites facing the camera in their material colour, with its opacity", () => {
+    const sprite = (extra: string) =>
+      `const s = new THREE.Sprite(new THREE.SpriteMaterial({ color: 'red'${extra} })); s.position.set(0, 1.5, 0); scene.add(s);`;
+    expect(at(frameOf(sprite(""))!, 0.5, 0.72)).toEqual([1, 0, 0]);
+    // Seen from the side, the sprite still faces the camera.
+    expect(at(frameOf(sprite("") + "camera.position.set(5, 0, 0); camera.lookAt(0, 0, 0);")!, 0.5, 0.72)).toEqual([1, 0, 0]);
+    expect(at(frameOf(sprite("")!)!, 0.5, 0.5)).toEqual(CLEAR.map((c) => Math.round(c * 255) / 255));
+    // SpriteMaterial is transparent by default, so its opacity blends.
+    const [r, g] = at(frameOf(sprite(", opacity: 0.5"))!, 0.5, 0.72);
+    expect(r).toBeCloseTo(0.5 + CLEAR[0] * 0.5, 2);
+    expect(g).toBeCloseTo(CLEAR[1] * 0.5, 2);
+  });
+
+  it("clears to renderer.setClearColor, and to a Color background over it; a string background is ignored", () => {
+    const corner = (code: string) => at(frameOf(code)!, 0.03, 0.03).map((c) => Math.round(c * 255));
+    expect(corner("renderer.setClearColor('lightblue');")).toEqual([173, 216, 230]);
+    expect(corner("renderer.setClearColor('lightblue'); scene.background = new THREE.Color('navy');")).toEqual([0, 0, 128]);
+    expect(corner("scene.background = 'lightblue';")).toEqual([5, 6, 13]);
   });
 
   it("draws normal colours: the middle of a sphere faces the camera, its top faces up", () => {

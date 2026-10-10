@@ -1110,6 +1110,28 @@ describe("Three.js lessons run against the installed three", () => {
   }
 });
 
+/** Wrong answers to the polyline lesson, judged on the scene graph alone (a
+ *  line is never pixel-judged); each must fail, and a LineLoop must pass. */
+describe("the polyline lesson is judged on its geometry", () => {
+  const { validators, solution } = lessonById("three-line")!.challenge;
+  const judged = validators.filter((v) => !readsPixels(v));
+  const cases: ReadonlyArray<readonly [string, string, boolean]> = [
+    ["only the first two points", solution.replace("setFromPoints(points),  // 点を順につなぐ", "setFromPoints(points.slice(0, 2)),"), false],
+    ["LineSegments (every other gap missing)", solution.replace("new THREE.Line(", "new THREE.LineSegments("), false],
+    ["a MeshBasicMaterial on the line", solution.replace("new THREE.LineBasicMaterial({ color: 'cyan' })", "new THREE.MeshBasicMaterial({ color: 'cyan' }) // LineBasicMaterial"), false],
+    ["the dots alone (the starter)", solution.replace(/const line[\s\S]*$/, "// LineBasicMaterial\n"), false],
+    ["a LineLoop through every point", solution.replace("new THREE.Line(", "new THREE.LineLoop("), true],
+  ];
+  for (const [label, code, passes] of cases) {
+    it(`${label}: ${passes ? "accepted" : "rejected"}`, () => {
+      expect(code).not.toBe(solution);
+      const snap = runScene(code);
+      expect(snap.error).toBeNull();
+      expect(evaluate(judged, snap).passed).toBe(passes);
+    });
+  }
+});
+
 /** The lessons whose scenes are unlit or softly lit, so the flat model can draw them. */
 const FLAT_LESSONS = [
   "three-first-mesh",

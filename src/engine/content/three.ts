@@ -1957,8 +1957,9 @@ export const threeTracks: readonly Track[] = [
               ],
               message: "線が 6個の点すべてを通っていません。new THREE.BufferGeometry().setFromPoints(points) で全部の点を渡しましょう",
             },
+            // No pixel check: a 1 px line and the small dots can miss every
+            // sample of the smallest preview (measured at 341×192).
             { kind: "colorApprox", rgb: [0, 1, 1], tol: 0.15 },
-            { kind: "rendersNonEmpty" },
           ],
           hints: [
             "const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), new THREE.LineBasicMaterial({ color: 'cyan' }));",
@@ -2188,7 +2189,8 @@ export const threeTracks: readonly Track[] = [
             // Measured in headless Chrome at 1:1 and 16:9: the sky where the
             // floor was, the shadow at 0.6 of the sky's brightness right below
             // the ball (black with the default opacity, the plain sky without
-            // receiveShadow), and the lit ball above it.
+            // receiveShadow; opacities 0.3–0.5 stay within the tolerance), and
+            // the lit ball above it.
             {
               kind: "pixelApprox",
               x: 0.5,
@@ -2202,7 +2204,7 @@ export const threeTracks: readonly Track[] = [
               x: 0.5,
               y: 0.47,
               rgb: [0.41, 0.51, 0.54],
-              tol: 0.15,
+              tol: 0.2,
               message: "影の濃さが目標と違います。ShadowMaterial の opacity を 0.4 にして、floor の receiveShadow はそのまま残しましょう",
             },
             { kind: "pixelApprox", x: 0.5, y: 0.66, rgb: [0.9, 0.36, 0.27], tol: 0.15 },
@@ -2211,7 +2213,7 @@ export const threeTracks: readonly Track[] = [
             "new THREE.ShadowMaterial({ opacity: 0.4 })",
             "receiveShadow = true はそのまま。消すと影も消えます",
           ],
-          solution: SKY_SHADOW_SCENE("new THREE.ShadowMaterial({ opacity: 0.4 })  // 影の部分だけ描く"),
+          solution: SKY_SHADOW_SCENE("new THREE.ShadowMaterial({ opacity: 0.4 })"),
         },
       },
     ],

@@ -30,6 +30,12 @@ function fit(): void {
 }
 fit();
 window.addEventListener("resize", fit);
+// This script can run before the iframe has been given its size: innerWidth is
+// still 0, so the fallback size is used, and no resize event may follow once
+// the size arrives (seen in 2 of 30 lesson openings in headless Chrome; the
+// preview then stayed a blurry 220 px canvas stretched to the box). A
+// ResizeObserver reports the size after layout, and every run fits first.
+if (typeof ResizeObserver === "function") new ResizeObserver(fit).observe(document.documentElement);
 
 interface RunMessage {
   type: "run";
@@ -46,6 +52,7 @@ window.addEventListener("message", (e: MessageEvent) => {
   if (!data || data.type !== "run") return;
   let snapshot: SceneSnapshot;
   try {
+    fit(); // a no-op when the canvas already fits
     snapshot = runner.run(data.code);
   } catch (err) {
     snapshot = {

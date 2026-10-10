@@ -47,6 +47,14 @@ function makeProgram(gl: WebGLRenderingContext, fragSrc: string): Compiled {
   return { program, log: "" };
 }
 
+/** WebGL 1 offers the screen-space derivatives (dFdx, dFdy, fwidth) only as
+ *  an extension. A shader can turn them on with `#extension
+ *  GL_OES_standard_derivatives : enable` only after the context has enabled
+ *  the extension; until then the directive is ignored and fwidth is unknown. */
+function enableDerivatives(gl: WebGLRenderingContext | null): void {
+  gl?.getExtension("OES_standard_derivatives");
+}
+
 function bindTriangle(gl: WebGLRenderingContext, program: WebGLProgram, buffer: WebGLBuffer): void {
   gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
   const loc = gl.getAttribLocation(program, "a_pos");
@@ -80,6 +88,7 @@ export function createShaderGrader(size = 128, grid = 24): ShaderGrader {
   canvas.width = size;
   canvas.height = size;
   const gl = canvas.getContext("webgl", { preserveDrawingBuffer: true, antialias: false });
+  enableDerivatives(gl);
   const buffer = gl?.createBuffer() ?? null;
   if (gl && buffer) {
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
@@ -128,6 +137,7 @@ export function createShaderPreview(
   reducedMotion: boolean,
 ): ShaderPreview {
   const gl = canvas.getContext("webgl", { antialias: true });
+  enableDerivatives(gl);
   const buffer = gl?.createBuffer() ?? null;
   if (gl && buffer) {
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);

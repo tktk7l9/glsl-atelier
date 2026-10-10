@@ -2,6 +2,7 @@
 // the WebGL runtime supplies `u_resolution`, `u_time`, `u_mouse`, renders it on
 // a full-screen quad, and reads back a grid of pixels for the validators.
 
+import type { ValidatorSpec } from "../validate/primitives.js";
 import type { Track } from "./types.js";
 
 const HEAD = `precision mediump float;
@@ -17,6 +18,12 @@ const sh = (body: string): string => `${HEAD}\n${body}\n`;
 // highp — supported by every WebGL device in practice and a no-op on desktop.
 const HEAD_HIGHP = HEAD.replace("precision mediump float;", "precision highp float;");
 const shHigh = (body: string): string => `${HEAD_HIGHP}\n${body}\n`;
+
+// WebGL 1 has screen-space derivatives (fwidth) only as an extension. The
+// runtime enables it on its contexts; a shader still has to ask for it, and
+// the directive must come before anything else.
+const shDerivatives = (body: string): string =>
+  `#extension GL_OES_standard_derivatives : enable\n${sh(body)}`;
 
 const FULL: [number, number, number, number] = [0, 0, 1, 1];
 
@@ -243,6 +250,149 @@ const ditherMain = (pick: string): string =>
 const DITHER_DARK: [number, number, number] = [0.06, 0.22, 0.06];
 const DITHER_LIGHT: [number, number, number] = [0.61, 0.74, 0.06];
 
+/** A neutral grey that is neither the black nor the white of a hard edge. */
+const MID_GREY: [number, number, number] = [0.5, 0.5, 0.5];
+
+/** The fwidth lesson: a white disc of radius 0.3; `edge` turns `d` into `c`. */
+const discMain = (edge: string): string =>
+  "void main() {\n" +
+  "  vec2 st = gl_FragCoord.xy / u_resolution;\n" +
+  "  float d = distance(st, vec2(0.5)) - 0.3;  // 円のふちまでの距離（中は負、外は正）\n" +
+  edge +
+  "  gl_FragColor = vec4(vec3(c), 1.0);\n}";
+
+/** The screen lesson: an evening sky and a warm glow, combined by `combine`. */
+const screenMain = (combine: string): string =>
+  "void main() {\n" +
+  "  vec2 st = gl_FragCoord.xy / u_resolution;\n" +
+  "  // 下の絵: 夕方の空（上ほど暗い青）\n" +
+  "  vec3 base = mix(vec3(0.2, 0.35, 0.6), vec3(0.08, 0.12, 0.3), st.y);\n" +
+  "  // 重ねる絵: (0.35, 0.4) を中心にした、オレンジのやわらかい光\n" +
+  "  float glow = 1.0 - smoothstep(0.1, 0.45, distance(st, vec2(0.35, 0.4)));\n" +
+  "  vec3 light = vec3(0.85, 0.6, 0.3) * glow;\n" +
+  combine +
+  "  gl_FragColor = vec4(col, 1.0);\n}";
+
+/** The overlay lesson: a grey ramp `a` and a colour `b`, multiplied in the
+ *  bottom half (the reference) and combined by `top` in the top half. */
+const overlayMain = (top: string): string =>
+  "void main() {\n" +
+  "  vec2 st = gl_FragCoord.xy / u_resolution;\n" +
+  "  float a = st.x;                 // 下の絵: 左が黒・右が白のグレー\n" +
+  "  vec3 b = vec3(0.2, 0.8, 0.95);  // 重ねる色（水色）\n" +
+  "  // 下半分: 乗算の見本（右へ行っても白くならない）\n" +
+  "  vec3 col = a * b;\n" +
+  "  if (st.y > 0.5) {\n" +
+  top +
+  "  }\n" +
+  "  gl_FragColor = vec4(col, 1.0);\n}";
+
+/** The brick lesson; `shift` goes where the odd rows are moved along. */
+const brickMain = (shift: string): string =>
+  "void main() {\n" +
+  "  vec2 st = gl_FragCoord.xy / u_resolution;\n" +
+  "  vec2 pos = st * vec2(3.0, 6.0);  // 横に 3 個・縦に 6 段（1 個は横長）\n" +
+  shift +
+  "  vec2 f = fract(pos);             // レンガの中の位置（0〜1）\n" +
+  "  // レンガの左と下のふちを目地（すき間）にする\n" +
+  "  float brick = step(0.1, f.x) * step(0.2, f.y);\n" +
+  "  vec3 col = mix(vec3(0.85, 0.82, 0.75), vec3(0.72, 0.3, 0.2), brick);\n" +
+  "  gl_FragColor = vec4(col, 1.0);\n}";
+
+const BRICK: [number, number, number] = [0.72, 0.3, 0.2];
+const MORTAR: [number, number, number] = [0.85, 0.82, 0.75];
+
+const HEX_DIST_FN =
+  "// 六角形のふちまでの近さ（中心で 0、ふちで 0.5）\n" +
+  "float hexDist(vec2 p) {\n" +
+  "  p = abs(p);\n" +
+  "  return max(dot(p, vec2(0.5, 0.8660254)), p.x);\n" +
+  "}\n\n";
+
+/** The hexagon lesson; `pick` sets `g` from the offsets `a` (and `b`). */
+const hexMain = (pick: string): string =>
+  "void main() {\n" +
+  "  vec2 st = gl_FragCoord.xy / u_resolution;\n" +
+  "  vec2 p = st * 5.0;\n" +
+  "  vec2 s = vec2(1.0, 1.7320508);  // 格子のマスの大きさ（横 1・縦 √3）\n" +
+  "  vec2 a = mod(p, s) - s * 0.5;   // 格子 A: いちばん近い中心からのずれ\n" +
+  pick +
+  "  float h = hexDist(g);\n" +
+  "  // ふちの近く（0.42 以上）は濃い茶色、内側ははちみつ色\n" +
+  "  vec3 col = mix(vec3(1.0, 0.75, 0.2), vec3(0.3, 0.15, 0.02), step(0.42, h));\n" +
+  "  gl_FragColor = vec4(col, 1.0);\n}";
+
+const HONEY: [number, number, number] = [1, 0.75, 0.2];
+const WAX: [number, number, number] = [0.3, 0.15, 0.02];
+
+/** The truchet lesson (6×6 tiles); `flip` may mirror the tile's `f`. */
+const truchetMain = (flip: string): string =>
+  "void main() {\n" +
+  "  vec2 st = gl_FragCoord.xy / u_resolution;\n" +
+  "  vec2 pos = st * 6.0;\n" +
+  "  vec2 i = floor(pos);  // マスの番号\n" +
+  "  vec2 f = fract(pos);  // マスの中の位置（0〜1）\n" +
+  flip +
+  "  // 左下の角と右上の角を中心にした、半径 0.5 の 4分の1円を 2本\n" +
+  "  float d = min(abs(length(f) - 0.5), abs(length(f - 1.0) - 0.5));\n" +
+  "  float c = 1.0 - step(0.13, d);\n" +
+  "  vec3 col = mix(vec3(0.05, 0.08, 0.2), vec3(0.95, 0.85, 0.6), c);\n" +
+  "  gl_FragColor = vec4(col, 1.0);\n}";
+
+const TRUCHET_BG: [number, number, number] = [0.05, 0.08, 0.2];
+const TRUCHET_LINE: [number, number, number] = [0.95, 0.85, 0.6];
+
+/**
+ * The truchet checks. The grader's 24×24 samples fall 4 to a tile; in every
+ * tile, sample (1, 1) lies on the arc of the unflipped tile and sample (2, 1)
+ * on the arc of the flipped one, each at least 1.5 px inside its line and
+ * outside the other. Which tiles the hash flips depends on the GPU's sin, so
+ * the checks ask only that every tile is drawn whole in one of the two
+ * orientations, and that both orientations occur somewhere.
+ */
+function truchetChecks(): ValidatorSpec[] {
+  const at = (gx: number, gy: number, rgb: [number, number, number]): ValidatorSpec => ({
+    kind: "pixelApprox",
+    x: (gx + 0.5) / 24,
+    y: (gy + 0.5) / 24,
+    rgb,
+  });
+  const whole: ValidatorSpec[] = [];
+  const flipped: ValidatorSpec[] = [];
+  const unflipped: ValidatorSpec[] = [];
+  for (let ty = 0; ty < 6; ty++) {
+    for (let tx = 0; tx < 6; tx++) {
+      const [ax, bx, y] = [tx * 4 + 1, tx * 4 + 2, ty * 4 + 1];
+      whole.push({
+        kind: "anyOf",
+        of: [
+          { kind: "allOf", of: [at(ax, y, TRUCHET_LINE), at(bx, y, TRUCHET_BG)] },
+          { kind: "allOf", of: [at(ax, y, TRUCHET_BG), at(bx, y, TRUCHET_LINE)] },
+        ],
+      });
+      unflipped.push(at(ax, y, TRUCHET_LINE));
+      flipped.push(at(bx, y, TRUCHET_LINE));
+    }
+  }
+  return [
+    {
+      kind: "allOf",
+      of: whole,
+      message: "1つのマスの中で、曲線の向きがばらばらです。乱数はピクセルの位置ではなく、マスの番号 i で決めましょう",
+    },
+    {
+      kind: "anyOf",
+      of: flipped,
+      message: "どのマスも同じ向きのままです。random(i) が 0.5 より大きいマスだけ、f.x を 1.0 - f.x にしましょう",
+    },
+    {
+      kind: "anyOf",
+      of: unflipped,
+      message: "すべてのマスが反転しています。反転するのは random(i) が 0.5 より大きいマスだけです",
+    },
+  ];
+}
+
 export const glslTracks: readonly Track[] = [
   {
     id: "glsl-basics",
@@ -393,7 +543,7 @@ export const glslTracks: readonly Track[] = [
     id: "glsl-shapes",
     domain: "glsl",
     title: "図形を描く",
-    summary: "step / smoothstep と距離関数で、白黒のかたちを切り出す。",
+    summary: "step / smoothstep と距離関数で白黒のかたちを切り出し、fwidth でふちを 1ピクセルだけぼかす。",
     icon: "🔵",
     lessons: [
       {
@@ -469,13 +619,67 @@ export const glslTracks: readonly Track[] = [
           ),
         },
       },
+      {
+        id: "glsl-fwidth",
+        title: "ふちを 1ピクセルだけぼかす: fwidth",
+        explanation:
+          "<p>前のレッスンの <code>smoothstep(0.2, 0.27, d)</code> は、ぼかす幅を座標の値（0.07）で決めていました。これだと大きな画面ではぼけすぎ、" +
+          "小さな画面ではギザギザが残ります。ふちを<b>ちょうど 1ピクセルぶん</b>だけぼかすには、「となりのピクセルへ進むと値がどれだけ変わるか」を" +
+          "知る必要があります。それを返すのが <code>fwidth(d)</code> です。<code>w = fwidth(d)</code> として <code>smoothstep(-w, w, d)</code> で" +
+          "塗り分ければ、どの大きさの画面でも、ふちだけがなめらかになります（<b>アンチエイリアス</b>）。WebGL 1 では <code>fwidth</code> は拡張機能なので、" +
+          "シェーダーの 1行目に <code>#extension GL_OES_standard_derivatives : enable</code> が要ります（書いてあります）。</p>",
+        challenge: {
+          starterCode: shDerivatives(
+            discMain(
+              "  // ここで、d が 1ピクセルぶん変わる幅 w を求めて、ふちをぼかそう\n" +
+                "  float c = 1.0 - step(0.0, d);  // いまはふちがギザギザ\n",
+            ),
+          ),
+          task: "w = fwidth(d) で 1ピクセルぶんの幅を求め、c を 1.0 - smoothstep(-w, w, d) にして、円のふちだけをなめらかにしよう。",
+          validators: [
+            { kind: "compiles" },
+            { kind: "sourceMatches", pattern: "fwidth\\s*\\(" },
+            // Sampled pixels right on the edge (0.05 px inside, or 0.75 px
+            // outside for a one-sided blur) must be neither white nor black…
+            {
+              kind: "anyOf",
+              of: [
+                { kind: "pixelApprox", x: 0.6875, y: 0.7292, rgb: MID_GREY, tol: 0.6 },
+                { kind: "pixelApprox", x: 0.6458, y: 0.7708, rgb: MID_GREY, tol: 0.6 },
+              ],
+              message: "円のふちがまだくっきりしています。step を smoothstep(-w, w, d) に替えて、ふちをぼかしましょう",
+            },
+            // …while 2–3 px away from it the disc and the background are pure.
+            {
+              kind: "allOf",
+              of: [
+                { kind: "pixelApprox", x: 0.8125, y: 0.4792, rgb: BLACK },
+                { kind: "pixelApprox", x: 0.5625, y: 0.2292, rgb: WHITE },
+              ],
+              message: "ぼかしの幅が広すぎます。ぼかすのは前後 1ピクセルぶん（w = fwidth(d)）だけにしましょう",
+            },
+            { kind: "pixelApprox", x: 0.48, y: 0.48, rgb: WHITE },
+            { kind: "pixelApprox", x: 0.04, y: 0.04, rgb: BLACK },
+          ],
+          hints: [
+            "float w = fwidth(d);  // となりのピクセルとの d の差",
+            "float c = 1.0 - smoothstep(-w, w, d);",
+          ],
+          solution: shDerivatives(
+            discMain(
+              "  float w = fwidth(d);                   // となりのピクセルとの d の差（1ピクセルぶん）\n" +
+                "  float c = 1.0 - smoothstep(-w, w, d);  // ふちの前後 1ピクセルだけをなめらかに\n",
+            ),
+          ),
+        },
+      },
     ],
   },
   {
     id: "glsl-color",
     domain: "glsl",
     title: "色と混色",
-    summary: "mix で 2色を補間し、cos でカラフルなパレットをつくる。",
+    summary: "mix で 2色を補間し、cos でパレットをつくり、スクリーンやオーバーレイで 2枚の絵を重ねる。",
     icon: "🌈",
     lessons: [
       {
@@ -524,6 +728,87 @@ export const glslTracks: readonly Track[] = [
           ],
           solution: sh(
             "void main() {\n  vec2 st = gl_FragCoord.xy / u_resolution;\n  vec3 col = 0.5 + 0.5 * cos(6.2831 * (st.x + vec3(0.0, 0.33, 0.67)));\n  gl_FragColor = vec4(col, 1.0);\n}",
+          ),
+        },
+      },
+      {
+        id: "glsl-screen-blend",
+        title: "光を重ねる: スクリーン合成",
+        explanation:
+          "<p>2枚の絵（レイヤー）の色 <code>a</code>・<code>b</code> の重ね方はいくつもあります。<b>乗算</b> <code>a * b</code> は暗くなる重ね方（影やインク）。" +
+          "反対に、2台のプロジェクターで同じスクリーンに映したように明るくなる重ね方が<b>スクリーン</b>で、<code>1.0 - (1.0 - a) * (1.0 - b)</code> と書きます。" +
+          "1 から引いて（反転して）掛け、もう一度 1 から引く形です。ただの足し算 <code>a + b</code> は 1.0 を超えた所が白く飛びますが、" +
+          "スクリーンは 1.0 を超えないので、光の中心にも色が残ります。</p>",
+        challenge: {
+          starterCode: sh(screenMain("  // いまは足し算。光の中心が白っぽく飛んでいる\n  vec3 col = base + light;\n")),
+          task: "col を base と light のスクリーン合成 1.0 - (1.0 - base) * (1.0 - light) にして、光の中心まで色が残るように重ねよう。",
+          validators: [
+            { kind: "compiles" },
+            // Exact arithmetic, so a tight tolerance: the sum (the starter)
+            // and max() both miss each lit pixel by 0.17 or more.
+            {
+              kind: "pixelApprox",
+              x: 0.3542,
+              y: 0.3958,
+              rgb: [0.88, 0.7, 0.64],
+              tol: 0.1,
+              message: "光の中心の色が違います。col = 1.0 - (1.0 - base) * (1.0 - light) にしましょう",
+            },
+            { kind: "pixelApprox", x: 0.4792, y: 0.4792, rgb: [0.83, 0.67, 0.61], tol: 0.1 },
+            { kind: "pixelApprox", x: 0.1875, y: 0.2708, rgb: [0.72, 0.62, 0.63], tol: 0.1 },
+            // Where the light does not reach, the sky stays as it was.
+            { kind: "pixelApprox", x: 0.8958, y: 0.8958, rgb: [0.09, 0.15, 0.33], tol: 0.1 },
+          ],
+          hints: [
+            "vec3 col = 1.0 - (1.0 - base) * (1.0 - light);",
+            "1.0 - base のように float から vec3 を引くと、各成分から引かれます",
+          ],
+          solution: sh(screenMain("  vec3 col = 1.0 - (1.0 - base) * (1.0 - light);  // スクリーン: 反転して掛けて、また反転\n")),
+        },
+      },
+      {
+        id: "glsl-overlay-blend",
+        title: "コントラストを強める: オーバーレイ",
+        explanation:
+          "<p><b>オーバーレイ</b>は、下の絵の明るさで乗算とスクリーンを使い分ける重ね方です。下の色 <code>a</code> が 0.5 より暗い所は乗算を 2倍した " +
+          "<code>2.0 * a * b</code>、明るい所はスクリーンを 2倍した形の <code>1.0 - 2.0 * (1.0 - a) * (1.0 - b)</code>。暗い所はより暗く、" +
+          "明るい所はより明るくなり、ちょうど 0.5 のグレーは重ねた色 <code>b</code> そのものになります。白黒の絵にコントラストを残したまま色をのせる定番です。" +
+          "2つの式は <code>mix(暗い側, 明るい側, step(0.5, a))</code> で、if を使わずに切り替えられます。</p>",
+        challenge: {
+          starterCode: sh(overlayMain("    // 上半分: ここをオーバーレイにしよう（いまは乗算のまま）\n    col = a * b;\n")),
+          task: "上半分を、a が 0.5 より暗い所は 2.0 * a * b、明るい所は 1.0 - 2.0 * (1.0 - a) * (1.0 - b) になるオーバーレイにして、黒 → 水色 → 白 のグラデーションにしよう。",
+          validators: [
+            { kind: "compiles" },
+            // The top half: dark side, middle, light side. A smooth mix by a
+            // instead of step misses the dark side by 0.15.
+            {
+              kind: "pixelApprox",
+              x: 0.2292,
+              y: 0.7292,
+              rgb: [0.09, 0.37, 0.44],
+              tol: 0.1,
+              message: "暗い側（左）の色が違います。a が 0.5 より小さい所は 2.0 * a * b にしましょう",
+            },
+            { kind: "pixelApprox", x: 0.4792, y: 0.7292, rgb: [0.19, 0.77, 0.91], tol: 0.1 },
+            {
+              kind: "allOf",
+              of: [
+                { kind: "pixelApprox", x: 0.7292, y: 0.7292, rgb: [0.57, 0.89, 0.97], tol: 0.1 },
+                { kind: "pixelApprox", x: 0.7708, y: 0.7292, rgb: [0.63, 0.91, 0.98], tol: 0.1 },
+              ],
+              message: "明るい側（右）が白に近づいていません。a が 0.5 以上の所は 1.0 - 2.0 * (1.0 - a) * (1.0 - b) にしましょう",
+            },
+          ],
+          hints: [
+            "vec3 dark = 2.0 * a * b;  vec3 light = 1.0 - 2.0 * (1.0 - a) * (1.0 - b);",
+            "col = mix(dark, light, step(0.5, a));  // a が 0.5 以上なら light",
+          ],
+          solution: sh(
+            overlayMain(
+              "    vec3 dark = 2.0 * a * b;                         // 暗い所: 乗算の 2倍\n" +
+                "    vec3 light = 1.0 - 2.0 * (1.0 - a) * (1.0 - b);  // 明るい所: スクリーンの形\n" +
+                "    col = mix(dark, light, step(0.5, a));            // a が 0.5 以上なら light\n",
+            ),
           ),
         },
       },
@@ -1265,6 +1550,152 @@ export const glslTracks: readonly Track[] = [
               "    }\n" +
               "  }\n" +
               "  gl_FragColor = vec4(vec3(m), 1.0);\n}",
+          ),
+        },
+      },
+    ],
+  },
+  {
+    id: "glsl-tiling",
+    domain: "glsl",
+    title: "タイルを敷きつめる",
+    summary: "1段おきにずらしたレンガ、2つの格子を重ねたハチの巣、マスごとに向きを変えるトルシェ。すき間なく平面を埋める模様。",
+    icon: "🐝",
+    lessons: [
+      {
+        id: "glsl-brick",
+        title: "レンガを積む: 1段おきにずらす",
+        explanation:
+          "<p>市松模様と同じように <code>floor</code> で<b>段の番号</b>を求めると、段ごとに違う処理ができます。<code>mod(floor(pos.y), 2.0)</code> は" +
+          "偶数の段で 0、奇数の段で 1 なので、これに 0.5 を掛けて <code>pos.x</code> に足せば、奇数の段だけがレンガ半分ずれます。" +
+          "ずらしてから <code>fract</code> を取るのがポイントで、目地（すき間）も一緒にずれて、本物のレンガ積みになります。</p>",
+        challenge: {
+          starterCode: sh(
+            brickMain("  // ここで、段の番号 floor(pos.y)（下から 0, 1, 2, …）が奇数の段だけ pos.x を 0.5 ずらそう\n"),
+          ),
+          task: "段の番号 floor(pos.y) が奇数の段だけ pos.x に 0.5 を足して、1段おきに半分ずれたレンガ積みにしよう。",
+          validators: [
+            { kind: "compiles" },
+            // Samples 1.1 px or more inside a joint or a brick: in the odd rows
+            // the vertical joints move by half a brick…
+            {
+              kind: "allOf",
+              of: [
+                { kind: "pixelApprox", x: 0.1875, y: 0.2708, rgb: MORTAR },
+                { kind: "pixelApprox", x: 0.3542, y: 0.2708, rgb: BRICK },
+                { kind: "pixelApprox", x: 0.5208, y: 0.6042, rgb: MORTAR },
+                { kind: "pixelApprox", x: 0.6875, y: 0.6042, rgb: BRICK },
+                { kind: "pixelApprox", x: 0.8542, y: 0.6042, rgb: MORTAR },
+              ],
+              message: "奇数の段の目地（すき間）がずれていません。floor(pos.y) が奇数の段だけ、pos.x に 0.5 を足しましょう",
+            },
+            // …and the even rows stay put.
+            {
+              kind: "allOf",
+              of: [
+                { kind: "pixelApprox", x: 0.3542, y: 0.4375, rgb: MORTAR },
+                { kind: "pixelApprox", x: 0.1875, y: 0.4375, rgb: BRICK },
+              ],
+              message: "偶数の段までずれています。ずらすのは、段の番号が奇数の段だけです",
+            },
+          ],
+          hints: [
+            "mod(floor(pos.y), 2.0) は偶数の段で 0.0、奇数の段で 1.0",
+            "pos.x += mod(floor(pos.y), 2.0) * 0.5;",
+          ],
+          solution: sh(brickMain("  pos.x += mod(floor(pos.y), 2.0) * 0.5;  // 奇数の段だけ半分ずらす\n")),
+        },
+      },
+      {
+        id: "glsl-hex-grid",
+        title: "ハチの巣: 六角形のタイル",
+        explanation:
+          "<p>六角形のタイルは、長方形の格子 2つから作れます。横 1・縦 √3 のマスの格子 A と、それを縦横に半マスずらした格子 B を用意し、" +
+          "各ピクセルで<b>近いほうの中心</b>を選ぶと、そのピクセルが入る六角形が決まります。選んだ中心からのずれ <code>g</code> を " +
+          "<code>hexDist</code> に渡すと、六角形のふちまでの近さ（中心で 0、ふちで 0.5）が分かります。どちらが近いかは、ずれの長さの 2乗 " +
+          "<code>dot(a, a)</code> を比べれば十分です（平方根を取らなくても大小は同じ）。</p>",
+        challenge: {
+          starterCode: sh(
+            HEX_DIST_FN +
+              hexMain(
+                "  // ここで、半マスずらした格子 B のずれ b を作り、a と b の近いほうを g にしよう\n" +
+                  "  vec2 g = a;\n",
+              ),
+          ),
+          task: "半マスずらした格子 B のずれ b = mod(p - s * 0.5, s) - s * 0.5 を作り、a と b のうち中心に近いほうを g にして、すき間なく並ぶ六角形にしよう。",
+          validators: [
+            { kind: "compiles" },
+            // Hexagon centres from lattice B (the starter's cell corners)…
+            {
+              kind: "allOf",
+              of: [
+                { kind: "pixelApprox", x: 0.3958, y: 0.3542, rgb: HONEY },
+                { kind: "pixelApprox", x: 0.6042, y: 0.6875, rgb: HONEY },
+                { kind: "pixelApprox", x: 0.1875, y: 0.6875, rgb: HONEY },
+              ],
+              message: "格子 B の中心が六角形になっていません。半マスずらした b も作り、a と b のうち中心に近いほうを g にしましょう",
+            },
+            // …and from lattice A, which choosing the farther centre loses…
+            {
+              kind: "allOf",
+              of: [
+                { kind: "pixelApprox", x: 0.4792, y: 0.5208, rgb: HONEY },
+                { kind: "pixelApprox", x: 0.3125, y: 0.1875, rgb: HONEY },
+              ],
+              message: "格子 A の中心が六角形になっていません。a と b のうち、ずれの短い（dot の小さい）ほうを選びましょう",
+            },
+            // …and walls where an A and a B hexagon meet (0.06 inside the wall).
+            {
+              kind: "allOf",
+              of: [
+                { kind: "pixelApprox", x: 0.3958, y: 0.2292, rgb: WAX },
+                { kind: "pixelApprox", x: 0.3542, y: 0.6042, rgb: WAX },
+              ],
+              message: "六角形のふちの位置が違います。格子 B は、マスの大きさ s の半分（s * 0.5）だけずらしましょう",
+            },
+          ],
+          hints: [
+            "vec2 b = mod(p - s * 0.5, s) - s * 0.5;",
+            "vec2 g = dot(a, a) < dot(b, b) ? a : b;  // 条件 ? 真のとき : 偽のとき",
+          ],
+          solution: sh(
+            HEX_DIST_FN +
+              hexMain(
+                "  vec2 b = mod(p - s * 0.5, s) - s * 0.5;  // 格子 B: 半マスずらした格子\n" +
+                  "  vec2 g = dot(a, a) < dot(b, b) ? a : b;  // 近いほうの中心を選ぶ\n",
+              ),
+          ),
+        },
+      },
+      {
+        id: "glsl-truchet",
+        title: "トルシェ: マスごとに向きを変える",
+        explanation:
+          "<p>マスに 4分の1 の円を 2本描き、マスごとに向きを<b>でたらめに</b>変えると、曲線が迷路のようにつながる模様になります（<b>トルシェ・タイル</b>）。" +
+          "どちらの向きでも曲線はマスの辺のまん中を通るので、となりのマスとかならずつながります。向きを変えるには、マスの中の座標を " +
+          "<code>f.x = 1.0 - f.x;</code> と左右に反転するだけ。どのマスを反転するかは、マスの番号 <code>i</code> を「乱数とノイズ」で作った " +
+          "<code>random</code> に渡して決めます。</p>",
+        challenge: {
+          starterCode: shHigh(
+            RANDOM_FN + truchetMain("  // ここで、random(i) が 0.5 より大きいマスだけ f.x を左右に反転しよう\n"),
+          ),
+          task: "random(i) が 0.5 より大きいマスだけ f.x を 1.0 - f.x にして、曲線が迷路のようにつながるトルシェ模様にしよう。",
+          validators: [
+            { kind: "compiles" },
+            // random() is declared above main(), so require the call inside it.
+            {
+              kind: "sourceMatches",
+              pattern: "main[\\s\\S]*random\\s*\\(",
+              message: "マスの番号 i を random に渡して、反転するマスを決めましょう",
+            },
+            ...truchetChecks(),
+          ],
+          hints: [
+            "if (random(i) > 0.5) f.x = 1.0 - f.x;",
+            "反転は、円までの距離 d を計算するより前に行います",
+          ],
+          solution: shHigh(
+            RANDOM_FN + truchetMain("  if (random(i) > 0.5) f.x = 1.0 - f.x;  // マスごとに、でたらめに左右反転\n"),
           ),
         },
       },

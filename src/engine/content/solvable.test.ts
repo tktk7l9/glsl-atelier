@@ -13,11 +13,12 @@
 // Three.js lessons: the starter and solution really run against the installed
 // `three` (so a renamed API would throw here), and the scene-graph validators
 // are judged on the resulting objects. Scenes made only of unlit things (basic
-// and emissive colours, data textures, points, plain alpha blending) are also
-// "rendered" by casting a ray through every sample with three's own Raycaster
-// and camera maths, at both preview shapes (1:1 and 16:9), so their pixel
-// validators are judged here too. Lit, fogged, shadowed and custom-shader
-// scenes need a real GPU and are left to the browser.
+// and emissive colours, data textures, points, plain alpha blending, fog, a
+// colour background, per-instance colours) are also "rendered" by casting a
+// ray through every sample with three's own Raycaster and camera maths, at
+// both preview shapes (1:1 and 16:9), so their pixel validators are judged
+// here too. Lit, shadowed and custom-shader scenes need a real GPU and are
+// left to the browser.
 
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
@@ -291,6 +292,72 @@ function dither(x: number, y: number, pick: (gray: number, threshold: number) =>
   return mixRgb([0.06, 0.22, 0.06], [0.61, 0.74, 0.06], c);
 }
 
+/** The pixel (column or row) whose centre is at `v` (0..1) on the grader canvas. */
+const pixelOf = (v: number): number => Math.round(v * SIZE - 0.5);
+
+/** GLSL fwidth(f) at the pixel whose centre is (x, y): |dFdx| + |dFdy|, each
+ *  the difference across the pixel's 2×2 quad, as GPUs take derivatives. */
+function fwidth(f: (x: number, y: number) => number, x: number, y: number): number {
+  const qx = pixelOf(x) - (pixelOf(x) % 2);
+  const qy = pixelOf(y) - (pixelOf(y) % 2);
+  const at = (px: number, py: number): number => f((px + 0.5) / SIZE, (py + 0.5) / SIZE);
+  return Math.abs(at(qx + 1, qy) - at(qx, qy)) + Math.abs(at(qx, qy + 1) - at(qx, qy));
+}
+
+/** The fwidth lesson's disc: distance to its edge, and `edge` turning it into c. */
+const discDistance = (x: number, y: number): number => length(x - 0.5, y - 0.5) - 0.3;
+const disc = (x: number, y: number, edge: (d: number, w: number) => number): RGB =>
+  grey(edge(discDistance(x, y), fwidth(discDistance, x, y)));
+
+/** The screen lesson: the evening sky and the glow, combined channel by channel. */
+function skyAndGlow(x: number, y: number, combine: (base: number, light: number) => number): RGB {
+  const glow = 1 - smoothstep(0.1, 0.45, length(x - 0.35, y - 0.4));
+  const base = [mix(0.2, 0.08, y), mix(0.35, 0.12, y), mix(0.6, 0.3, y)];
+  const light = [0.85, 0.6, 0.3].map((c) => c * glow);
+  return [combine(base[0], light[0]), combine(base[1], light[1]), combine(base[2], light[2])];
+}
+
+/** The overlay lesson: the grey ramp a = x under the colour b, multiplied in
+ *  the bottom half and combined by `top` in the top half. */
+const OVERLAY_B = [0.2, 0.8, 0.95] as const;
+function rampUnder(x: number, y: number, top: (a: number, b: number) => number): RGB {
+  const pick = y > 0.5 ? top : (a: number, b: number) => a * b;
+  return [pick(x, OVERLAY_B[0]), pick(x, OVERLAY_B[1]), pick(x, OVERLAY_B[2])];
+}
+const overlay = (a: number, b: number): number => mix(2 * a * b, 1 - 2 * (1 - a) * (1 - b), step(0.5, a));
+
+/** The brick lesson: 3×6 bricks, `shift` moving each row along by a fraction. */
+function bricks(x: number, y: number, shift: (row: number) => number): RGB {
+  const row = Math.floor(y * 6);
+  const brick = step(0.1, fract(x * 3 + shift(row))) * step(0.2, fract(y * 6));
+  return mixRgb([0.85, 0.82, 0.75], [0.72, 0.3, 0.2], brick);
+}
+
+/** The hexagon lesson: offsets from lattice A and from lattice B (shifted by
+ *  `bShift`), with `pick` choosing the offset that is drawn. */
+type V2 = readonly [number, number];
+const HEX_S: V2 = [1, 1.7320508];
+const hexDist = (gx: number, gy: number): number =>
+  Math.max(Math.abs(gx) * 0.5 + Math.abs(gy) * 0.8660254, Math.abs(gx));
+function honeycomb(x: number, y: number, pick: (a: V2, b: V2) => V2, bShift: V2 = [0.5, 0.8660254]): RGB {
+  const [px, py] = [x * 5, y * 5];
+  const a: V2 = [glslMod(px, HEX_S[0]) - 0.5, glslMod(py, HEX_S[1]) - HEX_S[1] / 2];
+  const b: V2 = [glslMod(px - bShift[0], HEX_S[0]) - 0.5, glslMod(py - bShift[1], HEX_S[1]) - HEX_S[1] / 2];
+  const g = pick(a, b);
+  return mixRgb([1, 0.75, 0.2], [0.3, 0.15, 0.02], step(0.42, hexDist(g[0], g[1])));
+}
+const nearer = (a: V2, b: V2): V2 => (a[0] ** 2 + a[1] ** 2 < b[0] ** 2 + b[1] ** 2 ? a : b);
+
+/** The truchet lesson (6×6 tiles); `flips` decides per pixel whether the
+ *  tile's f.x is mirrored. */
+function truchet(x: number, y: number, flips: (ix: number, iy: number, x: number, y: number) => boolean): RGB {
+  const [ix, iy] = [Math.floor(x * 6), Math.floor(y * 6)];
+  const fy = fract(y * 6);
+  const fx = flips(ix, iy, x, y) ? 1 - fract(x * 6) : fract(x * 6);
+  const d = Math.min(Math.abs(length(fx, fy) - 0.5), Math.abs(length(fx - 1, fy - 1) - 0.5));
+  return mixRgb([0.05, 0.08, 0.2], [0.95, 0.85, 0.6], 1 - step(0.13, d));
+}
+
 /** JS ports of (starter, solution) for the shader lessons added in 2026-10. */
 const SHADER_MODELS: Record<string, { starter: Shade; solution: Shade }> = {
   "glsl-repeat-dots": {
@@ -442,6 +509,30 @@ const SHADER_MODELS: Record<string, { starter: Shade; solution: Shade }> = {
     starter: (x, y) => dither(x, y, (gray) => gray),
     solution: (x, y) => dither(x, y, (gray, threshold) => step(threshold, gray)),
   },
+  "glsl-fwidth": {
+    starter: (x, y) => disc(x, y, (d) => 1 - step(0, d)),
+    solution: (x, y) => disc(x, y, (d, w) => 1 - smoothstep(-w, w, d)),
+  },
+  "glsl-screen-blend": {
+    starter: (x, y) => skyAndGlow(x, y, (a, b) => a + b),
+    solution: (x, y) => skyAndGlow(x, y, (a, b) => 1 - (1 - a) * (1 - b)),
+  },
+  "glsl-overlay-blend": {
+    starter: (x, y) => rampUnder(x, y, (a, b) => a * b),
+    solution: (x, y) => rampUnder(x, y, overlay),
+  },
+  "glsl-brick": {
+    starter: (x, y) => bricks(x, y, () => 0),
+    solution: (x, y) => bricks(x, y, (row) => glslMod(row, 2) * 0.5),
+  },
+  "glsl-hex-grid": {
+    starter: (x, y) => honeycomb(x, y, (a) => a),
+    solution: (x, y) => honeycomb(x, y, nearer),
+  },
+  "glsl-truchet": {
+    starter: (x, y) => truchet(x, y, () => false),
+    solution: (x, y) => truchet(x, y, (ix, iy) => random(ix, iy) > 0.5),
+  },
 };
 
 describe("shader lessons modelled on the grader's sample grid", () => {
@@ -456,8 +547,9 @@ describe("shader lessons modelled on the grader's sample grid", () => {
   }
 });
 
-/** Plausible wrong answers to the 2026-10 (third batch) shader lessons; each
- *  must be rejected. The source is the solution's, so only the drawing decides. */
+/** Plausible wrong answers to the 2026-10 (third and fourth batch) shader
+ *  lessons; each must be rejected. The source is the solution's, so only the
+ *  drawing decides. */
 const SHADER_NEAR_MISSES: Record<string, ReadonlyArray<readonly [string, Shade]>> = {
   "glsl-easing": [
     ["ease-in-out (smoothstep) is still halfway at t = 0.5", (x, y) => easedBall(x, y, (t) => smoothstep(0, 1, t))],
@@ -479,6 +571,40 @@ const SHADER_NEAR_MISSES: Record<string, ReadonlyArray<readonly [string, Shade]>
   "glsl-dither": [
     ["the comparison turned round", (x, y) => dither(x, y, (gray, threshold) => step(gray, threshold))],
     ["one threshold for every cell", (x, y) => dither(x, y, (gray) => step(0.5, gray))],
+  ],
+  // 2026-10, fourth batch.
+  "glsl-fwidth": [
+    ["a fixed blur six pixels wide (smoothstep(-0.05, 0.05, d))", (x, y) => disc(x, y, (d) => 1 - smoothstep(-0.05, 0.05, d))],
+    ["the blur only inside, over five pixels", (x, y) => disc(x, y, (d, w) => 1 - smoothstep(-5 * w, 0, d))],
+  ],
+  "glsl-screen-blend": [
+    ["max(base, light)", (x, y) => skyAndGlow(x, y, Math.max)],
+    ["multiply", (x, y) => skyAndGlow(x, y, (a, b) => a * b)],
+    ["the average mix(base, light, 0.5)", (x, y) => skyAndGlow(x, y, (a, b) => mix(a, b, 0.5))],
+    ["without the inner inversion: 1 - base * light", (x, y) => skyAndGlow(x, y, (a, b) => 1 - a * b)],
+    ["without the outer inversion: (1 - base) * (1 - light)", (x, y) => skyAndGlow(x, y, (a, b) => (1 - a) * (1 - b))],
+  ],
+  "glsl-overlay-blend": [
+    ["screen everywhere", (x, y) => rampUnder(x, y, (a, b) => 1 - (1 - a) * (1 - b))],
+    ["only the dark formula 2ab", (x, y) => rampUnder(x, y, (a, b) => 2 * a * b)],
+    ["only the light formula", (x, y) => rampUnder(x, y, (a, b) => 1 - 2 * (1 - a) * (1 - b))],
+    ["switching on the colour b (hard light)", (x, y) => rampUnder(x, y, (a, b) => overlay(b, a))],
+    ["the two formulas the wrong way round", (x, y) => rampUnder(x, y, (a, b) => mix(1 - 2 * (1 - a) * (1 - b), 2 * a * b, step(0.5, a)))],
+    ["mixing by a instead of step(0.5, a)", (x, y) => rampUnder(x, y, (a, b) => mix(2 * a * b, 1 - 2 * (1 - a) * (1 - b), a))],
+  ],
+  "glsl-brick": [
+    ["every row shifted", (x, y) => bricks(x, y, () => 0.5)],
+    ["the even rows shifted instead", (x, y) => bricks(x, y, (row) => (1 - glslMod(row, 2)) * 0.5)],
+    ["a quarter brick instead of a half", (x, y) => bricks(x, y, (row) => glslMod(row, 2) * 0.25)],
+  ],
+  "glsl-hex-grid": [
+    ["picking the farther centre", (x, y) => honeycomb(x, y, (a, b) => (nearer(a, b) === a ? b : a))],
+    ["lattice B only", (x, y) => honeycomb(x, y, (_a, b) => b)],
+    ["lattice B shifted by (0.5, 0.5) instead of s * 0.5", (x, y) => honeycomb(x, y, nearer, [0.5, 0.5])],
+  ],
+  "glsl-truchet": [
+    ["every tile flipped", (x, y) => truchet(x, y, () => true)],
+    ["a random flip per pixel, not per tile", (x, y) => truchet(x, y, (_ix, _iy, px, py) => random(px * 6, py * 6) > 0.5)],
   ],
 };
 
@@ -505,6 +631,11 @@ const PIXEL_KINDS: ReadonlySet<ValidatorSpec["kind"]> = new Set([
   "cellsFlat",
   "rendersNonEmpty",
 ]);
+
+/** Does `spec` read the rendered pixels? A group (allOf / anyOf) does when
+ *  everything in it does. */
+const readsPixels = (spec: ValidatorSpec): boolean =>
+  spec.kind === "allOf" || spec.kind === "anyOf" ? spec.of.every(readsPixels) : PIXEL_KINDS.has(spec.kind);
 
 /** The renderer switches lesson code may flip (reset by the runner before each run). */
 interface RendererState {
@@ -646,20 +777,48 @@ function normalColor(hit: THREE.Intersection, camera: THREE.Camera): RGB {
   return [n.x * 0.5 + 0.5, n.y * 0.5 + 0.5, n.z * 0.5 + 0.5];
 }
 
-/** The colour (as written to the canvas) of a flat-shadable surface at `uv`. */
-function flatColor(m: THREE.Material, uv: THREE.Vector2 | undefined): RGB {
+/** The linear colour an InstancedMesh gives the instance `hit` landed on
+ *  (setColorAt), which multiplies the material colour; white otherwise. */
+function instanceTint(hit: THREE.Intersection | undefined): RGB {
+  const o = hit?.object;
+  if (!(o instanceof THREE.InstancedMesh) || !o.instanceColor || hit?.instanceId === undefined) return [1, 1, 1];
+  const i = hit.instanceId * 3;
+  const c = o.instanceColor.array;
+  return [c[i], c[i + 1], c[i + 2]];
+}
+
+/** The colour (as written to the canvas) of a flat-shadable surface where
+ *  `hit` lands (undefined for a point of a Points object). */
+function flatColor(m: THREE.Material, hit: THREE.Intersection | undefined): RGB {
   if (m instanceof THREE.MeshStandardMaterial) {
     const e = m.emissive;
     const k = m.emissiveIntensity;
     return encode(e.r * k, e.g * k, e.b * k);
   }
   const { color, map } = m as THREE.MeshBasicMaterial;
-  if (!map) return encode(color.r, color.g, color.b);
+  const [tr, tg, tb] = instanceTint(hit);
+  if (!map) return encode(color.r * tr, color.g * tg, color.b * tb);
   // Never flagged with needsUpdate ⇒ WebGL samples three's empty (black) texture.
-  if (map.version === 0 || !uv) return [0, 0, 0];
+  if (map.version === 0 || !hit?.uv) return [0, 0, 0];
   // The texel is multiplied by the (linear) material colour.
-  const [r, g, b] = texel(map, uv);
-  return encode(color.r * r, color.g * g, color.b * b);
+  const [r, g, b] = texel(map, hit.uv);
+  return encode(color.r * r * tr, color.g * g * tg, color.b * b * tb);
+}
+
+/** A linear colour as the canvas holds it (sRGB), e.g. a background colour. */
+const srgbOf = (c: THREE.Color): RGB => encode(c.r, c.g, c.b);
+
+/** Fog as three's shaders apply it: after the output encoding, mixing towards
+ *  the fog colour (in sRGB) by the point's view depth — smoothstep(near, far,
+ *  depth) for Fog, 1 − exp(−(density · depth)²) for FogExp2. Materials that
+ *  ignore fog (MeshNormalMaterial) keep their colour. */
+function fogged(scene: THREE.Scene, camera: THREE.Camera, m: THREE.Material, point: THREE.Vector3, colour: RGB): RGB {
+  const fog = scene.fog;
+  if (!fog || !(m as { fog?: boolean }).fog) return colour;
+  const depth = -point.clone().applyMatrix4(camera.matrixWorldInverse).z;
+  const amount = fog instanceof THREE.FogExp2 ? 1 - Math.exp(-((fog.density * depth) ** 2)) : smoothstep(fog.near, fog.far, depth);
+  const target = srgbOf(fog.color);
+  return [mix(colour[0], target[0], amount), mix(colour[1], target[1], amount), mix(colour[2], target[2], amount)];
 }
 
 /** Does the renderer draw `o`? Not when it or an ancestor is hidden. */
@@ -678,10 +837,13 @@ function clipped(renderer: RendererState, material: THREE.Material, point: THREE
 
 /** The read-back grid of an unlit scene, found by ray casting the pixels the
  *  runner samples (preview `aspect`, 360 px tall), or null when the scene holds
- *  anything this model cannot shade (lights on lit materials, fog, normal or
- *  shader materials, lines…). */
+ *  anything this model cannot shade (lights on lit materials, shader
+ *  materials, lines, a textured background…). */
 function flatRender({ scene, camera, renderer }: SceneRun, aspect: number): Sample[] | null {
-  if (scene.fog) return null;
+  const background = scene.background;
+  if (background !== null && !(background instanceof THREE.Color)) return null;
+  // A Color background is the clear colour, as written (sRGB).
+  const clear = background ? srgbOf(background) : CLEAR;
   scene.updateMatrixWorld(true);
   camera.updateMatrixWorld(true);
   const lit = scene.getObjectsByProperty("isLight", true).length > 0;
@@ -726,8 +888,8 @@ function flatRender({ scene, camera, renderer }: SceneRun, aspect: number): Samp
         const key = `${hit.object.uuid}:${hit.instanceId ?? ""}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        const colour = m instanceof THREE.MeshNormalMaterial ? normalColor(hit, camera) : flatColor(m, hit.uv);
-        layers.push([hit.distance, colour, alphaOf(m)]);
+        const colour = m instanceof THREE.MeshNormalMaterial ? normalColor(hit, camera) : flatColor(m, hit);
+        layers.push([hit.distance, fogged(scene, camera, m, hit.point, colour), alphaOf(m)]);
       }
       // A point is a screen-aligned square, size / (2 · depth) NDC high on
       // each side of its centre (gl_PointSize = size · scale / depth).
@@ -742,14 +904,15 @@ function flatRender({ scene, camera, renderer }: SceneRun, aspect: number): Samp
           const at = world.clone().project(camera);
           const half = m.size / (2 * depth);
           if (Math.abs(at.x - ndc.x) <= half / aspect && Math.abs(at.y - ndc.y) <= half) {
-            layers.push([world.distanceTo(camera.position), flatColor(m, undefined), alphaOf(m)]);
+            const colour = fogged(scene, camera, m, world, flatColor(m, undefined));
+            layers.push([world.distanceTo(camera.position), colour, alphaOf(m)]);
           }
         }
       }
       // Back to front over the clear colour: opaque surfaces cover what is
       // behind them, transparent ones blend in canvas space like WebGL does.
       layers.sort((a, b) => b[0] - a[0]);
-      let rgb: RGB = CLEAR;
+      let rgb: RGB = clear;
       for (const [, colour, a] of layers) {
         rgb = [colour[0] * a + rgb[0] * (1 - a), colour[1] * a + rgb[1] * (1 - a), colour[2] * a + rgb[2] * (1 - a)];
       }
@@ -763,7 +926,7 @@ function flatRender({ scene, camera, renderer }: SceneRun, aspect: number): Samp
 describe("Three.js lessons run against the installed three", () => {
   for (const lesson of LESSONS.filter((l) => l.id.startsWith("three-"))) {
     const { validators, starterCode, solution } = lesson.challenge;
-    const judged = validators.filter((v) => !PIXEL_KINDS.has(v.kind));
+    const judged = validators.filter((v) => !readsPixels(v));
 
     it(`${lesson.id}: the solution runs without error and passes every scene-graph check`, () => {
       const snap = runScene(solution);
@@ -795,15 +958,22 @@ const FLAT_LESSONS = [
   "three-group",
   "three-hierarchy",
   "three-instanced",
+  "three-instance-color",
   "three-camera-back",
   "three-camera-angle",
   "three-camera-fov",
+  "three-raycast",
   "three-rotate",
   "three-keyframes",
   "three-points",
   "three-data-texture",
   "three-texture-repeat",
   "three-canvas-texture",
+  "three-lathe",
+  "three-extrude",
+  "three-tube",
+  "three-fog",
+  "three-fog-exp2",
 ];
 
 describe("unlit Three.js lessons judged on a ray-cast frame, pixels included", () => {
@@ -855,6 +1025,35 @@ const SCENE_NEAR_MISSES: Record<string, ReadonlyArray<readonly [string, (solutio
   "three-canvas-texture": [
     ["no colorSpace (the canvas colours come out washed out)", (s) => s.replace(/tex\.colorSpace = [^\n]*\n/, "")],
   ],
+  // 2026-10, fourth batch.
+  "three-instance-color": [
+    [
+      "setting material.color in the loop (every rung ends up the last colour)",
+      (s) => s.replace(/rungs\.setColorAt\(i, [^\n]*\n/, "rungs.material.color.set(colors[i]);  // setColorAt\n"),
+    ],
+    ["the colours in reverse order", (s) => s.replace("colors[i]))", "colors[4 - i]))")],
+  ],
+  "three-raycast": [
+    ["intersecting without setFromCamera (the ray starts inside the ball)", (s) => s.replace(/raycaster\.setFromCamera\([^\n]*\n/, "")],
+    ["the face normal instead of the hit point", (s) => s.replace("hits[0].point", "hits[0].face.normal")],
+    ["the pointer on the lower half (0, -0.4)", (s) => s.replace("Vector2(0, 0.4)", "Vector2(0, -0.4)")],
+  ],
+  "three-lathe": [
+    [
+      "x and y swapped in the profile (height, radius)",
+      (s) => s.replace(/Vector2\((-?[\d.]+), (-?[\d.]+)\)/g, "Vector2($2, $1)"),
+    ],
+    ["half a turn (phiLength Math.PI)", (s) => s.replace("LatheGeometry(points, 48)", "LatheGeometry(points, 48, 0, Math.PI)")],
+  ],
+  "three-extrude": [["a depth of 0.2 (too thin to see from above)", (s) => s.replace("depth: 0.8", "depth: 0.2")]],
+  "three-tube": [
+    ["a thin wire (radius 0.03)", (s) => s.replace("TubeGeometry(curve, 300, 0.22, 16)", "TubeGeometry(curve, 300, 0.03, 16)")],
+  ],
+  "three-fog-exp2": [
+    ["density 0.05 (too thin)", (s) => s.replace("'lightblue', 0.12", "'lightblue', 0.05")],
+    ["density 0.3 (too thick)", (s) => s.replace("'lightblue', 0.12", "'lightblue', 0.3")],
+    ["a white fog against the blue sky", (s) => s.replace("FogExp2('lightblue'", "FogExp2('white'")],
+  ],
 };
 
 describe("unlit scene near misses are rejected", () => {
@@ -888,14 +1087,14 @@ describe("the flat model itself", () => {
     expect(at(frameOf("")!, 0.5, 0.5)).toEqual(CLEAR.map((c) => Math.round(c * 255) / 255));
   });
 
-  it("refuses scenes that need lighting, fog or other materials", () => {
+  it("refuses scenes that need lighting, other materials or a textured background", () => {
     const ball = "new THREE.Mesh(new THREE.SphereGeometry(1, 16, 8), MAT)";
     const lit = "scene.add(new THREE.AmbientLight(0xffffff, 1));\n";
     expect(frameOf(`scene.add(${ball.replace("MAT", "new THREE.ShaderMaterial()")});`)).toBeNull();
     expect(frameOf(`scene.add(${ball.replace("MAT", "new THREE.MeshNormalMaterial({ flatShading: true })")});`)).toBeNull();
     expect(frameOf(`scene.add(${ball.replace("MAT", "new THREE.MeshStandardMaterial()")});${lit}`)).toBeNull();
     expect(frameOf(`scene.add(${ball.replace("MAT", "new THREE.MeshBasicMaterial({ wireframe: true })")});`)).toBeNull();
-    expect(frameOf("scene.fog = new THREE.Fog(0x000000, 1, 2);")).toBeNull();
+    expect(frameOf("scene.background = new THREE.Texture();")).toBeNull();
     expect(frameOf("scene.add(new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial()));")).toBeNull();
     expect(
       frameOf("scene.add(new THREE.Points(new THREE.BufferGeometry(), new THREE.PointsMaterial({ sizeAttenuation: false })));"),
@@ -916,5 +1115,41 @@ describe("the flat model itself", () => {
         `scene.add(new THREE.Mesh(new THREE.SphereGeometry(1, 16, 8), new THREE.MeshBasicMaterial({ color: 'red' })));`,
     );
     expect(at(frame!, 0.5, 0.5)).toEqual([1, 0, 0]);
+  });
+
+  // A white wall facing the camera 5 away, then a black fog over it.
+  const wall = (material: string) =>
+    `scene.add(new THREE.Mesh(new THREE.PlaneGeometry(20, 20), new THREE.${material}));\n`;
+
+  it("fades into Fog by smoothstep(near, far) of the view depth, and into FogExp2 by its density", () => {
+    const basic = wall("MeshBasicMaterial({ color: 'white' })");
+    // smoothstep(3, 8, 5) = 0.352: white loses 35% towards the black fog.
+    expect(at(frameOf(basic + "scene.fog = new THREE.Fog(0x000000, 3, 8);")!, 0.5, 0.5)[0]).toBeCloseTo(0.648, 2);
+    // 1 − exp(−(0.1 · 5)²) = 0.221.
+    expect(at(frameOf(basic + "scene.fog = new THREE.FogExp2(0x000000, 0.1);")!, 0.5, 0.5)[0]).toBeCloseTo(0.779, 2);
+    // Points are fogged too; MeshNormalMaterial ignores fog.
+    const dot =
+      "scene.add(new THREE.Points(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3()]), new THREE.PointsMaterial({ color: 'white', size: 2 })));\n";
+    expect(at(frameOf(dot + "scene.fog = new THREE.FogExp2(0x000000, 0.1);")!, 0.5, 0.5)[0]).toBeCloseTo(0.779, 2);
+    const normal = at(frameOf(wall("MeshNormalMaterial()") + "scene.fog = new THREE.Fog(0x000000, 3, 8);")!, 0.5, 0.5);
+    expect(normal[2]).toBe(1);
+  });
+
+  it("clears to a Color background, as written (sRGB)", () => {
+    const frame = frameOf("scene.background = new THREE.Color('lightblue');")!;
+    expect(at(frame, 0.5, 0.5).map((c) => Math.round(c * 255))).toEqual([173, 216, 230]);
+  });
+
+  it("multiplies each instance's setColorAt colour into the material colour", () => {
+    const frame = frameOf(
+      "const bars = new THREE.InstancedMesh(new THREE.BoxGeometry(4, 1, 1), new THREE.MeshBasicMaterial({ color: 'white' }), 2);\n" +
+        "bars.setMatrixAt(0, new THREE.Matrix4().makeTranslation(0, -1, 0));\n" +
+        "bars.setMatrixAt(1, new THREE.Matrix4().makeTranslation(0, 1, 0));\n" +
+        "bars.setColorAt(0, new THREE.Color('red'));\n" +
+        "scene.add(bars);\n",
+    )!;
+    expect(at(frame, 0.5, 0.34)).toEqual([1, 0, 0]);
+    // An instance never given a colour keeps the default white.
+    expect(at(frame, 0.5, 0.66)).toEqual([1, 1, 1]);
   });
 });

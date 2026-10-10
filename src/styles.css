@@ -158,6 +158,12 @@ main {
   margin: 0 auto;
   padding: 26px 22px 48px;
 }
+/* A lesson opened by its link is drawn once its chunk has loaded. Until then
+   keep the footer below the fold, so the lesson does not shove it out of
+   sight (a layout shift; SHIG 73). */
+main:empty {
+  min-height: 100vh;
+}
 
 /* ---- catalogue ---- */
 .intro {
@@ -399,9 +405,6 @@ main {
 .step-link:hover {
   text-decoration: underline;
 }
-.step-link[hidden] {
-  display: none;
-}
 .panel {
   background: var(--panel);
   border: 1px solid var(--line);
@@ -458,7 +461,6 @@ main {
   padding: 4px 0;
   font-size: 0.84rem;
 }
-.mdn-link.hidden,
 .preview-canvas.hidden,
 .preview-frame.hidden {
   display: none;

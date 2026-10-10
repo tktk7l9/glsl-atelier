@@ -147,7 +147,6 @@ describe("opening a GLSL lesson", () => {
     expect(app.root.querySelector(".task")?.textContent).toContain(SOLID.challenge.task);
     const mdn = getByRole(app.root, "link", { name: "MDN でもっと学ぶ →" });
     expect(mdn.getAttribute("href")).toBe(`https://developer.mozilla.org${SOLID.mdnPath}`);
-    expect(mdn.classList.contains("hidden")).toBe(false);
     expect(getByText(app.root, "GLSL")).toBeTruthy();
     expect(getByText(app.root, "コードエディタ (GLSL フラグメントシェーダー)")).toBeTruthy();
     expect($editor().value).toBe(SOLID.challenge.starterCode);
@@ -155,6 +154,8 @@ describe("opening a GLSL lesson", () => {
     // Forward is a plain hash link in the nav; the first lesson has no way back (SHIG 81, 59).
     expect($step("次のレッスン →")?.getAttribute("href")).toBe(`#${LESSONS[1].id}`);
     expect($step("← 前のレッスン")).toBeNull();
+    // No step without a destination is left in the nav, even hidden (SHIG 37).
+    expect($nav().querySelector("a:not([href])")).toBeNull();
     // ...and it is not a button competing with the editing actions (SHIG 73, 47).
     expect(queryByRole(app.root, "button", { name: "次のレッスン →" })).toBeNull();
     const keys = getByText(app.root, "⌘/Ctrl + Enter でチェック · Tab でインデント · Esc でエディタから抜ける");
@@ -185,6 +186,7 @@ describe("opening a GLSL lesson", () => {
   it("offers only the way back on the last lesson", async () => {
     await app.open(LAST.id);
     expect($step("次のレッスン →")).toBeNull();
+    expect($nav().querySelector("a:not([href])")).toBeNull();
     expect($step("← 前のレッスン")?.getAttribute("href")).toBe(`#${LESSONS[LESSONS.length - 2].id}`);
     // Reopening an earlier lesson brings the forward link back.
     await app.open(SOLID.id);
@@ -208,10 +210,15 @@ describe("opening a GLSL lesson", () => {
     expect($errorBar().classList.contains("is-show")).toBe(false);
   });
 
-  it("hides the MDN link for a lesson without one", async () => {
+  it("leaves the MDN link out for a lesson without one, and brings it back (SHIG 37)", async () => {
     await app.open("glsl-rgb-mix");
     expect(getByText(app.root, "はじめてのシェーダー · 2 / 3")).toBeTruthy();
-    expect(app.root.querySelector(".mdn-link")?.classList.contains("hidden")).toBe(true);
+    // No hidden link without a destination is left in the page.
+    expect(app.root.querySelector(".mdn-link")).toBeNull();
+    expect(app.root.querySelector("a:not([href])")).toBeNull();
+    await app.open("glsl-solid-color");
+    const mdn = getByRole(app.root, "link", { name: "MDN でもっと学ぶ →" });
+    expect(mdn.previousElementSibling?.classList.contains("explain")).toBe(true);
   });
 
   it("ignores an unknown lesson id", async () => {

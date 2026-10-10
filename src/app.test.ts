@@ -9,6 +9,7 @@ import { getByLabelText, getByRole, getByText, queryByRole, queryByText } from "
 import userEvent, { type UserEvent } from "@testing-library/user-event";
 import { LESSONS, lessonById } from "./engine/content/index.js";
 import { evaluate } from "./engine/validate/run.js";
+import type { ValidatorSpec } from "./engine/validate/primitives.js";
 import type { SceneSnapshot, ShaderSnapshot } from "./engine/validate/snapshot.js";
 import { toGridSamples } from "./sandbox/sample-grid.js";
 
@@ -516,17 +517,29 @@ describe("next lesson", () => {
   });
 
   it("returns to the catalogue from the last lesson and says so", async () => {
-    // The last lesson (shadows) is judged on a rendered frame — a lit floor at
-    // the bottom with a dark shadow above it — and on the lights in the scene,
-    // which the generic fake does not produce. Hand it a frame that does.
+    // The last lesson (the shadow-only floor) is judged on a rendered frame,
+    // on the lights in the scene and on the floor's material, which the
+    // generic fake does not produce. Hand it a frame that paints each pixel
+    // check's target colour at its sample, and the scene's constructors as
+    // objects whose material is the last one made.
     const lastLessonFrame = (code: string): SceneSnapshot => {
       const base = fakeSceneSnapshot(code);
       const types = [...code.matchAll(/new THREE\.(\w+)\(/g)].map((m) => m[1]);
+      const materials = types.filter((t) => t.endsWith("Material"));
       const px = new Uint8Array(16 * 16 * 4);
-      for (let i = 0; i < 16 * 16; i++) px.set(Math.floor(i / 16) < 5 ? [255, 255, 255, 255] : [0, 0, 0, 255], i * 4);
+      // The grid index whose sample is nearest to v (ties go to the lower one, as nearestSample does).
+      const nearest = (v: number): number => [...Array(16).keys()].reduce((b, g) => (Math.abs((g + 0.5) / 16 - v) < Math.abs((b + 0.5) / 16 - v) ? g : b), 0);
+      const paint = (spec: ValidatorSpec): void => {
+        if (spec.kind === "pixelApprox") {
+          px.set([...spec.rgb.map((c) => Math.round(c * 255)), 255], (nearest(spec.y) * 16 + nearest(spec.x)) * 4);
+        } else if (spec.kind === "allOf" || spec.kind === "anyOf") {
+          spec.of.forEach(paint);
+        }
+      };
+      LAST.challenge.validators.forEach(paint);
       return {
         ...base,
-        objects: types.map((type, i) => ({ ...base.objects[0], id: `o${i}`, type })),
+        objects: types.map((type, i) => ({ ...base.objects[0], id: `o${i}`, type, material: materials[materials.length - 1] ?? null })),
         samples: toGridSamples(px, 16, 16, 16),
       };
     };
@@ -554,7 +567,7 @@ describe("opening a Three.js lesson", () => {
     await app.open(MESH.id);
     expect(getByText(app.root, "Three.js")).toBeTruthy();
     expect(getByText(app.root, "コードエディタ (Three.js / JavaScript)")).toBeTruthy();
-    expect(getByText(app.root, "シーンの基本 · 1 / 3")).toBeTruthy();
+    expect(getByText(app.root, "シーンの基本 · 1 / 4")).toBeTruthy();
     const frame = app.root.querySelector<HTMLIFrameElement>(".preview-frame")!;
     expect(frame.classList.contains("hidden")).toBe(false);
     expect(frame.getAttribute("sandbox")).toBe("allow-scripts");

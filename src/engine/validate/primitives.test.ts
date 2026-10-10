@@ -255,6 +255,19 @@ describe("scene validators", () => {
     );
   });
 
+  it("verticesAtLeast", () => {
+    const snap = scene({
+      objects: [obj({ type: "Points", vertices: 6 }), obj({ type: "Line", vertices: 2 }), obj({ type: "Group" })],
+    });
+    pass({ kind: "verticesAtLeast", min: 6 }, snap);
+    reject({ kind: "verticesAtLeast", min: 7 }, snap);
+    pass({ kind: "verticesAtLeast", min: 2, type: "Line" }, snap);
+    reject({ kind: "verticesAtLeast", min: 6, type: "Line" }, snap);
+    expect(runSpec({ kind: "verticesAtLeast", min: 6, type: "Line" }, snap).message).toContain("Line が必要です（現在 2 個）");
+    expect(runSpec({ kind: "verticesAtLeast", min: 1, type: "Group" }, snap).message).toContain("現在 0 個");
+    expect(runSpec({ kind: "verticesAtLeast", min: 9 }, snap).message).toContain("オブジェクト");
+  });
+
   it("cameraPositioned", () => {
     reject({ kind: "cameraPositioned", position: [0, 0, 0] }, scene({ camera: null }));
     const snap = scene({ camera: { type: "PerspectiveCamera", position: [0, 5, 10] } });

@@ -1174,10 +1174,19 @@ const FLAT_LESSONS = [
 describe("unlit Three.js lessons judged on a ray-cast frame, pixels included", () => {
   const threeLessons = LESSONS.filter((l) => l.id.startsWith("three-"));
 
-  it("draws exactly the unlit and softly lit lessons (the rest need a GPU)", () => {
-    const rendered = threeLessons.filter((l) => flatRender(execScene(l.challenge.solution), 1) !== null);
-    expect(rendered.map((l) => l.id)).toEqual(FLAT_LESSONS);
+  // Exactly the unlit and softly lit lessons are drawn (the rest need a GPU):
+  // one test per lesson, since rendering all of them in one test ran past
+  // the 5 s limit on the CI runner.
+  it("lists the drawable lessons in catalogue order", () => {
+    expect(FLAT_LESSONS).toEqual(threeLessons.map((l) => l.id).filter((id) => FLAT_LESSONS.includes(id)));
   });
+
+  for (const lesson of threeLessons) {
+    const drawable = FLAT_LESSONS.includes(lesson.id);
+    it(`${lesson.id}: ${drawable ? "drawn by the model" : "needs a GPU"}`, () => {
+      expect(flatRender(execScene(lesson.challenge.solution), 1) !== null).toBe(drawable);
+    });
+  }
 
   for (const id of FLAT_LESSONS) {
     const { validators, starterCode, solution } = lessonById(id)!.challenge;

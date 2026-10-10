@@ -117,6 +117,134 @@ const CANVAS_DRAWING =
   "ctx.fillStyle = 'tomato';\n" +
   "ctx.fillRect(24, 20, 16, 16);  // まん中: 赤い家\n";
 
+/** The per-instance colour lesson: the ladder of the InstancedMesh lesson,
+ *  white, with `paint` inside the loop that places the rungs. */
+const RAINBOW_LADDER = (paint: string): string =>
+  "const geo = new THREE.BoxGeometry(2, 0.6, 0.6);\n" +
+  "const mat = new THREE.MeshBasicMaterial({ color: 'white' });  // コピーの色はこの白に掛けられる\n" +
+  "const rungs = new THREE.InstancedMesh(geo, mat, 5);\n" +
+  "scene.add(rungs);\n\n" +
+  "// 下から順に塗りたい色\n" +
+  "const colors = ['tomato', 'gold', 'limegreen', 'deepskyblue', 'mediumpurple'];\n\n" +
+  "const m = new THREE.Matrix4();\n" +
+  "for (let i = 0; i < 5; i++) {\n" +
+  "  m.setPosition(0, i - 2, 0);\n" +
+  "  rungs.setMatrixAt(i, m);\n" +
+  paint +
+  "}\n";
+
+/** The rungs' colours as drawn (sRGB), bottom to top. */
+const RAINBOW: ReadonlyArray<[number, number, number]> = [
+  [1, 0.39, 0.28],
+  [1, 0.84, 0],
+  [0.2, 0.8, 0.2],
+  [0, 0.75, 1],
+  [0.58, 0.44, 0.86],
+];
+
+/** The raycasting lesson: a big ball and a marker hidden at its centre. */
+const RAYCAST_SCENE =
+  "// 大きな球（面の向きで色が変わる）\n" +
+  "const ball = new THREE.Mesh(\n" +
+  "  new THREE.SphereGeometry(1.5, 64, 32),\n" +
+  "  new THREE.MeshNormalMaterial(),\n" +
+  ");\n" +
+  "scene.add(ball);\n\n" +
+  "// 目印の金色の玉（いまは球の中心に隠れている）\n" +
+  "const marker = new THREE.Mesh(\n" +
+  "  new THREE.SphereGeometry(0.35, 32, 16),\n" +
+  "  new THREE.MeshBasicMaterial({ color: 'gold' }),\n" +
+  ");\n" +
+  "scene.add(marker);\n\n" +
+  "// 画面の中心から少し上の点（中心が (0, 0)、端が ±1 の座標）\n" +
+  "const pointer = new THREE.Vector2(0, 0.4);\n" +
+  "const raycaster = new THREE.Raycaster();\n";
+
+/** The lathe lesson's profile: (distance from the axis, height), bottom up. */
+const VASE_PROFILE =
+  "// つぼの断面（軸からの距離, 高さ）を下から順に\n" +
+  "const points = [\n" +
+  "  new THREE.Vector2(0.0, -1.5),  // 底の中心\n" +
+  "  new THREE.Vector2(0.8, -1.5),  // 底のふち\n" +
+  "  new THREE.Vector2(1.2, -0.6),  // いちばんふくらんだ所\n" +
+  "  new THREE.Vector2(0.9, 0.4),   // 肩\n" +
+  "  new THREE.Vector2(0.45, 1.0),  // 首\n" +
+  "  new THREE.Vector2(0.6, 1.5),   // 口\n" +
+  "];\n\n";
+
+const VASE_MESH =
+  "const vase = new THREE.Mesh(geo, new THREE.MeshNormalMaterial());\n" + "scene.add(vase);\n";
+
+/** The extrude lesson: a camera above the scene and a gem outline. */
+const GEM_OUTLINE =
+  "// 少し上から見下ろすカメラ\n" +
+  "camera.position.set(0, 3, 3);\n" +
+  "camera.lookAt(0, 0, 0);\n\n" +
+  "// 宝石の形の輪郭（moveTo で書き始め、lineTo で線を引く）\n" +
+  "const shape = new THREE.Shape();\n" +
+  "shape.moveTo(-1.2, 1.2);\n" +
+  "shape.lineTo(1.2, 1.2);\n" +
+  "shape.lineTo(1.8, 0.4);\n" +
+  "shape.lineTo(0, -1.6);\n" +
+  "shape.lineTo(-1.8, 0.4);\n" +
+  "shape.lineTo(-1.2, 1.2);\n\n";
+
+const GEM_MESH =
+  "const gem = new THREE.Mesh(geo, new THREE.MeshNormalMaterial());\n" + "scene.add(gem);\n";
+
+/** The tube lesson: a spring's points, the curve through them, and the curve
+ *  shown as dots. With the tube on, its coils cover the centre line at 0.10–0.20,
+ *  0.46–0.56 and 0.81–0.92 of the height (in front) and 0.35–0.41 and 0.57–0.64
+ *  (behind), so the read-back rows 0.16, 0.53, 0.59 and 0.84 land at least 0.02
+ *  inside a coil and the rows 0.28 and 0.72 well between them. */
+const SPRING_CURVE =
+  "// らせん（ばね）を通る点の列\n" +
+  "const points = [];\n" +
+  "for (let i = 0; i <= 100; i++) {\n" +
+  "  const t = (i / 100) * Math.PI * 5;  // 2周半\n" +
+  "  points.push(new THREE.Vector3(Math.cos(t) * 1.2, (t - Math.PI * 2.5) * 0.25, Math.sin(t) * 1.2));\n" +
+  "}\n" +
+  "// 点をなめらかに通る曲線\n" +
+  "const curve = new THREE.CatmullRomCurve3(points);\n\n" +
+  "// 曲線を点で示す\n" +
+  "const dots = new THREE.Points(\n" +
+  "  new THREE.BufferGeometry().setFromPoints(curve.getPoints(150)),\n" +
+  "  new THREE.PointsMaterial({ color: 'white', size: 0.06 }),\n" +
+  ");\n" +
+  "scene.add(dots);\n";
+
+/** The FogExp2 lesson: a sky-blue background, a long meadow and rows of trees.
+ *  The meadow ends 1 in front of the camera: a vertex on the camera plane
+ *  (view depth 0) left SwiftShader fogging the whole plane. */
+const MEADOW_SCENE =
+  "// 空の色の背景\n" +
+  "scene.background = new THREE.Color('lightblue');\n\n" +
+  "// 奥へ長くのびる草原\n" +
+  "const ground = new THREE.Mesh(\n" +
+  "  new THREE.PlaneGeometry(40, 60),\n" +
+  "  new THREE.MeshBasicMaterial({ color: 'seagreen' }),\n" +
+  ");\n" +
+  "ground.rotation.x = -Math.PI / 2;\n" +
+  "ground.position.set(0, -1, -26);\n" +
+  "scene.add(ground);\n\n" +
+  "// 両側に並ぶ木（円すい）\n" +
+  "for (let z = 2; z >= -18; z -= 4) {\n" +
+  "  for (const x of [-3, 3]) {\n" +
+  "    const tree = new THREE.Mesh(\n" +
+  "      new THREE.ConeGeometry(0.6, 2, 16),\n" +
+  "      new THREE.MeshBasicMaterial({ color: 'darkgreen' }),\n" +
+  "    );\n" +
+  "    tree.position.set(x, 0, z);\n" +
+  "    scene.add(tree);\n" +
+  "  }\n" +
+  "}\n";
+
+const SKY_BLUE: [number, number, number] = [0.68, 0.85, 0.9];
+
+/** Mid-grey: MeshNormalMaterial writes normal * 0.5 + 0.5 for a unit normal,
+ *  so every colour it draws is exactly 0.5 away from this. */
+const NORMAL_COLOURED: [number, number, number] = [0.5, 0.5, 0.5];
+
 export const threeTracks: readonly Track[] = [
   {
     id: "three-basics",
@@ -772,7 +900,7 @@ export const threeTracks: readonly Track[] = [
     id: "three-transform",
     domain: "three",
     title: "変形とグループ",
-    summary: "拡大縮小、Group でまとめる、親子でくっつけて動かす、InstancedMesh で同じ形をたくさん描く。",
+    summary: "拡大縮小、Group でまとめる、親子でくっつけて動かす、InstancedMesh で同じ形をたくさん描いて 1つずつ色を変える。",
     icon: "🔧",
     lessons: [
       {
@@ -931,13 +1059,48 @@ export const threeTracks: readonly Track[] = [
             "}\n",
         },
       },
+      {
+        id: "three-instance-color",
+        title: "1つずつ色を変える: setColorAt",
+        explanation:
+          "<p><code>InstancedMesh</code> のコピーはみな同じマテリアルで描かれますが、<b>色だけはコピーごとに</b>変えられます。" +
+          "<code>setColorAt(番号, 色)</code> に <code>THREE.Color</code> を渡すと、その番号のコピーは、マテリアルの色にその色を掛けた色で描かれます" +
+          "（だからマテリアルは白にしておきます）。パーティクルやグラフの棒を色分けするときの定番です。" +
+          "なお、一度描いたあとで色を変えたときは <code>instanceColor.needsUpdate = true</code> で知らせます。</p>",
+        challenge: {
+          starterCode: RAINBOW_LADDER("  // ここで、i 番目の板の色を colors[i] にしよう\n"),
+          task: "ループの中で setColorAt を使い、i 番目の板を colors[i] の色にして、はしごを下から虹色に塗り分けよう。",
+          validators: [
+            { kind: "noError" },
+            { kind: "sourceMatches", pattern: "setColorAt" },
+            { kind: "instanced", min: 5 },
+            // Every rung in its own colour, bottom to top, up the centre line.
+            {
+              kind: "allOf",
+              of: [0.16, 0.34, 0.5, 0.66, 0.84].map((y, i) => ({
+                kind: "pixelApprox" as const,
+                x: 0.5,
+                y,
+                rgb: RAINBOW[i],
+                tol: 0.15,
+              })),
+              message: "板の色が colors の順になっていません。ループの中で rungs.setColorAt(i, new THREE.Color(colors[i])) としましょう",
+            },
+          ],
+          hints: [
+            "rungs.setColorAt(i, new THREE.Color(colors[i]));",
+            "material.color を変えると、5枚とも同じ色になってしまいます",
+          ],
+          solution: RAINBOW_LADDER("  rungs.setColorAt(i, new THREE.Color(colors[i]));  // i 番目のコピーの色\n"),
+        },
+      },
     ],
   },
   {
     id: "three-camera",
     domain: "three",
     title: "カメラ",
-    summary: "カメラの位置・向き・視野角で、シーンの見え方を変える。",
+    summary: "カメラの位置・向き・視野角で見え方を変え、カメラから光線を飛ばして指した場所を調べる。",
     icon: "🎥",
     lessons: [
       {
@@ -1060,6 +1223,46 @@ export const threeTracks: readonly Track[] = [
             "scene.add(ball);\n" +
             "camera.fov = 30;\n" +
             "camera.updateProjectionMatrix();\n",
+        },
+      },
+      {
+        id: "three-raycast",
+        title: "指した場所を調べる: Raycaster",
+        explanation:
+          "<p>画面のどこを指しているかを 3D で調べるには、カメラから画面の 1点に向けて<b>光線（レイ）</b>を飛ばし、何に当たるかを計算します。" +
+          "<code>Raycaster</code> の <code>setFromCamera(点, camera)</code> は、画面の点（中心が (0, 0)、端が ±1 の座標）を通るレイを作ります。" +
+          "<code>intersectObject(物)</code> は当たった場所を近い順の配列で返し、<code>hits[0].point</code> がいちばん手前の当たった点（<code>Vector3</code>）です。" +
+          "実際のアプリでは、マウスの位置をこの -1〜1 の座標に直して渡し、クリックした物を選んだりします。</p>",
+        challenge: {
+          starterCode:
+            RAYCAST_SCENE +
+            "\n// ここで、カメラから pointer を通るレイを飛ばし、球に当たった点に marker を置こう\n",
+          task: "raycaster.setFromCamera でカメラから pointer を通るレイを作り、intersectObject(ball) で当たった点 hits[0].point に marker を置こう。",
+          validators: [
+            { kind: "noError" },
+            { kind: "sourceMatches", pattern: "intersectObjects?\\s*\\(" },
+            // Where the ray through (0, 0.4) meets the ball (computed with
+            // three's own Raycaster in solvable.test.ts).
+            {
+              kind: "objectAt",
+              position: [0, 0.874, 1.217],
+              type: "Mesh",
+              tol: 0.1,
+              message: "marker が、レイが球に当たった点にありません。marker.position.copy(hits[0].point) で置きましょう",
+            },
+            // The marker shows right where the pointer is: 0.7 of the height.
+            { kind: "pixelApprox", x: 0.5, y: 0.72, rgb: [1, 0.84, 0], tol: 0.15 },
+            { kind: "pixelApprox", x: 0.5, y: 0.84, rgb: BACKGROUND, tol: 0.15 },
+          ],
+          hints: [
+            "raycaster.setFromCamera(pointer, camera);  const hits = raycaster.intersectObject(ball);",
+            "marker.position.copy(hits[0].point);",
+          ],
+          solution:
+            RAYCAST_SCENE +
+            "raycaster.setFromCamera(pointer, camera);    // カメラから pointer を通るレイ\n" +
+            "const hits = raycaster.intersectObject(ball);  // 当たった場所（近い順）\n" +
+            "marker.position.copy(hits[0].point);\n",
         },
       },
     ],
@@ -1353,10 +1556,147 @@ export const threeTracks: readonly Track[] = [
     ],
   },
   {
+    id: "three-curves",
+    domain: "three",
+    title: "線から形をつくる",
+    summary: "断面の輪郭を回して器に、2D の輪郭を押し出して立体に、3D の曲線にそって管にする。",
+    icon: "🏺",
+    lessons: [
+      {
+        id: "three-lathe",
+        title: "回して作る: LatheGeometry",
+        explanation:
+          "<p>ろくろで器を作るように、<b>断面の輪郭</b>を縦の軸（y 軸）のまわりに 1周回すと、つぼやグラスのような形ができます。" +
+          "<code>LatheGeometry(点の配列, 分割数)</code> の点は <code>Vector2(軸からの距離, 高さ)</code> で、下から順に並べます。" +
+          "x が半径、y が高さです（逆にすると、まったく違う形になります）。分割数を増やすほど、まわりがなめらかになります。</p>",
+        challenge: {
+          starterCode:
+            VASE_PROFILE +
+            "// いまはただの円柱。points を y 軸のまわりに回した形にしよう\n" +
+            "const geo = new THREE.CylinderGeometry(1, 1, 3, 48);\n" +
+            VASE_MESH,
+          task: "円柱の代わりに LatheGeometry(points, 48) を使って、断面 points を回したつぼを作ろう。",
+          validators: [
+            { kind: "noError" },
+            { kind: "geometryOf", geometry: "LatheGeometry" },
+            // Up the centre line, MeshNormalMaterial shows which way the surface
+            // faces: down at the bulging body, up at the narrowing shoulder (a
+            // cylinder faces straight ahead everywhere).
+            {
+              kind: "allOf",
+              of: [
+                { kind: "pixelApprox", x: 0.5, y: 0.28, rgb: [0.41, 0.28, 0.94], tol: 0.12 },
+                { kind: "pixelApprox", x: 0.5, y: 0.59, rgb: [0.39, 0.71, 0.94], tol: 0.12 },
+              ],
+              message: "つぼのふくらみと肩の形が見えません。円柱の代わりに LatheGeometry(points, 48) を使いましょう",
+            },
+            { kind: "pixelApprox", x: 0.5, y: 0.9, rgb: BACKGROUND, tol: 0.15 },
+            { kind: "pixelApprox", x: 0.5, y: 0.1, rgb: BACKGROUND, tol: 0.15 },
+          ],
+          hints: [
+            "const geo = new THREE.LatheGeometry(points, 48);",
+            "Vector2 の x が軸からの距離（半径）、y が高さです",
+          ],
+          solution: VASE_PROFILE + "const geo = new THREE.LatheGeometry(points, 48);  // 断面を y 軸のまわりに回す\n" + VASE_MESH,
+        },
+      },
+      {
+        id: "three-extrude",
+        title: "押し出して厚みをつける: ExtrudeGeometry",
+        explanation:
+          "<p>2D の輪郭は <code>THREE.Shape</code> で描けます。<code>moveTo(x, y)</code> で書き始めの点へ移り、<code>lineTo(x, y)</code> で線を引いていきます。" +
+          "それを <code>ShapeGeometry</code> にすると厚みのない板ですが、<code>ExtrudeGeometry(shape, { depth: 厚み, bevelEnabled: false })</code> にすると、" +
+          "輪郭を z の方向へ押し出した立体になります（クッキーの型抜きのイメージ）。<code>bevelEnabled</code> を true（初期値）のままにすると、" +
+          "角が斜めに削られます。ロゴや文字を立体にするときの基本です。</p>",
+        challenge: {
+          starterCode:
+            GEM_OUTLINE +
+            "// いまは厚みのない板。輪郭を押し出して、厚み 0.8 の立体にしよう\n" +
+            "const geo = new THREE.ShapeGeometry(shape);\n" +
+            GEM_MESH,
+          task: "ShapeGeometry を ExtrudeGeometry(shape, { depth: 0.8, bevelEnabled: false }) に替えて、宝石の輪郭を厚み 0.8 の立体にしよう。",
+          validators: [
+            { kind: "noError" },
+            { kind: "geometryOf", geometry: "ExtrudeGeometry" },
+            // Seen from above, the extruded top wall shows as a band above the
+            // face (normal colour: facing up), and the face, pushed towards the
+            // camera, reaches lower than the flat outline.
+            {
+              kind: "pixelApprox",
+              x: 0.5,
+              y: 0.66,
+              rgb: [0.5, 0.85, 0.85],
+              tol: 0.15,
+              message: "上から見たときの厚みの面が見えません。ShapeGeometry を ExtrudeGeometry にして、depth を 0.8 にしましょう",
+            },
+            { kind: "pixelApprox", x: 0.5, y: 0.5, rgb: [0.5, 0.15, 0.85], tol: 0.15 },
+            { kind: "pixelApprox", x: 0.5, y: 0.28, rgb: [0.5, 0.15, 0.85], tol: 0.15 },
+            { kind: "pixelApprox", x: 0.5, y: 0.84, rgb: BACKGROUND, tol: 0.15 },
+          ],
+          hints: [
+            "const geo = new THREE.ExtrudeGeometry(shape, { depth: 0.8, bevelEnabled: false });",
+            "depth が押し出す長さ（厚み）です",
+          ],
+          solution:
+            GEM_OUTLINE +
+            "const geo = new THREE.ExtrudeGeometry(shape, { depth: 0.8, bevelEnabled: false });  // z の方向へ 0.8 押し出す\n" +
+            GEM_MESH,
+        },
+      },
+      {
+        id: "three-tube",
+        title: "曲線にそって: TubeGeometry",
+        explanation:
+          "<p>3D の点の列を <code>CatmullRomCurve3</code> に渡すと、点をなめらかに通る曲線になります。その曲線にそって太さのある管を作るのが " +
+          "<code>TubeGeometry(曲線, 長さ方向の分割数, 半径, 断面の分割数)</code> です。ケーブルやパイプ、ジェットコースターのレール、ばねなど、" +
+          "曲がりくねった形に使えます。長さ方向の分割数が少ないと、なめらかな曲線がカクカクの折れ線になります。</p>",
+        challenge: {
+          starterCode:
+            SPRING_CURVE +
+            "\n// ここで、curve にそって半径 0.22 の管（TubeGeometry）を作り、MeshNormalMaterial で scene に追加しよう\n",
+          task: "curve にそって TubeGeometry(curve, 300, 0.22, 16) の管を作り、MeshNormalMaterial で scene に追加して、ばねにしよう。",
+          validators: [
+            { kind: "noError" },
+            { kind: "geometryOf", geometry: "TubeGeometry" },
+            // The coils cross the centre line in front (bottom, middle, top)
+            // and behind (upper); between them the background shows through.
+            // Which way the tube faces changes across its width, but every
+            // MeshNormalMaterial colour lies 0.5 from mid-grey, while the
+            // background and the white dots are 0.8 or more away from it.
+            {
+              kind: "allOf",
+              of: [0.16, 0.53, 0.59, 0.84].map((y) => ({
+                kind: "pixelApprox" as const,
+                x: 0.5,
+                y,
+                rgb: NORMAL_COLOURED,
+                tol: 0.55,
+              })),
+              message: "ばねの管が、曲線の通る所に見えません。TubeGeometry(curve, 300, 0.22, 16) の Mesh を scene に追加しましょう",
+            },
+            { kind: "pixelApprox", x: 0.5, y: 0.28, rgb: BACKGROUND, tol: 0.15 },
+            { kind: "pixelApprox", x: 0.5, y: 0.72, rgb: BACKGROUND, tol: 0.15 },
+          ],
+          hints: [
+            "const geo = new THREE.TubeGeometry(curve, 300, 0.22, 16);",
+            "const spring = new THREE.Mesh(geo, new THREE.MeshNormalMaterial()); scene.add(spring);",
+          ],
+          solution:
+            SPRING_CURVE +
+            "const spring = new THREE.Mesh(\n" +
+            "  new THREE.TubeGeometry(curve, 300, 0.22, 16),  // 曲線, 長さ方向の分割, 半径, 断面の分割\n" +
+            "  new THREE.MeshNormalMaterial(),\n" +
+            ");\n" +
+            "scene.add(spring);\n",
+        },
+      },
+    ],
+  },
+  {
     id: "three-atmosphere",
     domain: "three",
     title: "空気感: 霧と影",
-    summary: "Fog で遠くをかすませ、影を落として、シーンに奥行きと接地感を出す。",
+    summary: "Fog と FogExp2 で遠くをかすませ、影を落として、シーンに奥行きと接地感を出す。",
     icon: "🌁",
     lessons: [
       {
@@ -1395,6 +1735,46 @@ export const threeTracks: readonly Track[] = [
             "floor.position.set(0, -1, -13);\n" +
             "scene.add(floor);\n" +
             "scene.fog = new THREE.Fog(0x05060d, 3, 8);\n",
+        },
+      },
+      {
+        id: "three-fog-exp2",
+        title: "濃さで決める霧: FogExp2",
+        explanation:
+          "<p><code>THREE.FogExp2(色, 濃さ)</code> は、距離の範囲ではなく<b>濃さ（density）</b>だけで決まる霧です。近くはほとんど透けていて、" +
+          "遠くへ行くほど急に濃くなるので、<code>Fog</code> のような「ここから先は霧」という境目ができず、本物のもやに近く見えます。" +
+          "霧の色は背景色 <code>scene.background</code> とそろえるのがコツで、遠くの物が空に溶けこんでいきます。濃さは 0.1 前後から試すと扱いやすい値です。</p>",
+        challenge: {
+          starterCode: MEADOW_SCENE + "\n// ここで scene.fog を設定して、遠くの草原と木を空の色に溶かそう\n",
+          task: "scene.fog に THREE.FogExp2（色は背景と同じ 'lightblue'・濃さ 0.12）を設定して、遠くの草原と木を空の色に溶かそう。",
+          validators: [
+            { kind: "noError" },
+            { kind: "sourceMatches", pattern: "FogExp2" },
+            // The meadow up the centre line: nearly clear at the bottom, half
+            // gone further back, and the sky's own colour at the horizon.
+            { kind: "pixelApprox", x: 0.5, y: 0.03, rgb: [0.2, 0.56, 0.37], tol: 0.1 },
+            {
+              kind: "allOf",
+              of: [
+                { kind: "pixelApprox", x: 0.5, y: 0.34, rgb: [0.36, 0.65, 0.54], tol: 0.1 },
+                { kind: "pixelApprox", x: 0.5, y: 0.41, rgb: [0.54, 0.76, 0.74], tol: 0.1 },
+              ],
+              message: "草原のかすみ方が目標と違います。FogExp2 の濃さを 0.12 にしましょう",
+            },
+            {
+              kind: "pixelApprox",
+              x: 0.5,
+              y: 0.47,
+              rgb: SKY_BLUE,
+              tol: 0.1,
+              message: "草原の奥が空の色に溶けていません。霧の色を背景と同じ 'lightblue' にしましょう",
+            },
+          ],
+          hints: [
+            "scene.fog = new THREE.FogExp2('lightblue', 0.12);",
+            "霧の色と背景色が同じだと、遠くの物が空に溶けて見えます",
+          ],
+          solution: MEADOW_SCENE + "scene.fog = new THREE.FogExp2('lightblue', 0.12);  // 背景と同じ色の霧\n",
         },
       },
       {

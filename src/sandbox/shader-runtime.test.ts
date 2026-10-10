@@ -7,45 +7,71 @@
 // must redraw on its own.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createShaderPreview, type ShaderPreview } from "./shader-runtime.js";
+import { createShaderGrader, createShaderPreview, type ShaderPreview } from "./shader-runtime.js";
 
 const SHADER = "void main() { gl_FragColor = vec4(1.0); }";
 
 /** A WebGL context that succeeds at everything; constants are numbers. */
-function fakeGl(): { gl: WebGLRenderingContext; draws: () => number } {
+function fakeGl(): { gl: WebGLRenderingContext; draws: () => number; extensions: string[] } {
   let draws = 0;
+  const extensions: string[] = [];
   const gl = new Proxy({} as Record<string, unknown>, {
     get(_target, prop) {
       if (typeof prop !== "string") return undefined;
       if (/^[A-Z_0-9]+$/.test(prop)) return 1;
-      return (..._args: unknown[]) => {
+      return (...args: unknown[]) => {
         if (prop === "drawArrays") draws++;
+        if (prop === "getExtension") {
+          extensions.push(String(args[0]));
+          return null;
+        }
         if (prop === "getShaderParameter" || prop === "getProgramParameter") return true;
         if (prop.startsWith("create") || prop === "getUniformLocation") return {};
         return 0;
       };
     },
   });
-  return { gl: gl as unknown as WebGLRenderingContext, draws: () => draws };
+  return { gl: gl as unknown as WebGLRenderingContext, draws: () => draws, extensions };
 }
 
 const previews: ShaderPreview[] = [];
 
 function setup(width: number, height: number) {
   const canvas = document.createElement("canvas");
-  const { gl, draws } = fakeGl();
+  const { gl, draws, extensions } = fakeGl();
   canvas.getContext = (() => gl) as unknown as HTMLCanvasElement["getContext"];
   const box = { width, height };
   Object.defineProperty(canvas, "clientWidth", { get: () => box.width });
   Object.defineProperty(canvas, "clientHeight", { get: () => box.height });
   const preview = createShaderPreview(canvas, true);
   previews.push(preview);
-  return { canvas, box, draws, preview };
+  return { canvas, box, draws, extensions, preview };
 }
 
 afterEach(() => {
   previews.splice(0).forEach((p) => p.dispose());
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
+
+describe("screen-space derivatives (fwidth)", () => {
+  it("the preview enables OES_standard_derivatives so `#extension` shaders compile", () => {
+    const { extensions } = setup(300, 300);
+    expect(extensions).toContain("OES_standard_derivatives");
+  });
+
+  it("the grader enables it on its own offscreen context too", () => {
+    const { gl, extensions } = fakeGl();
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(gl as unknown as RenderingContext);
+    createShaderGrader().dispose();
+    expect(extensions).toContain("OES_standard_derivatives");
+  });
+
+  it("still grades (as not compiled) where WebGL is missing", () => {
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
+    const snap = createShaderGrader().grade(SHADER);
+    expect(snap.compiled).toBe(false);
+  });
 });
 
 describe("createShaderPreview: resizing", () => {

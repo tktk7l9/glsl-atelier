@@ -24,7 +24,11 @@ vi.mock("./app.js", () => ({
     return controller;
   },
 }));
-vi.mock("./viz/background.js", () => ({ createBackground: vi.fn() }));
+// Whether <main> already showed something when the background started.
+const backgroundAfterScreen: boolean[] = [];
+vi.mock("./viz/background.js", () => ({
+  createBackground: () => void backgroundAfterScreen.push((document.querySelector("main")?.children.length ?? 0) > 0),
+}));
 
 // Whether the shell (its header) existed when each track load started.
 const loadsBeforeShell: boolean[] = [];
@@ -59,6 +63,11 @@ describe("a cold start on a lesson's link", () => {
     const alert = await waitFor(() => getByRole(main, "alert"));
     expect(getByRole(alert, "heading", { level: 1 }).textContent).toBe("レッスンを開けませんでした");
     expect(controller.open).not.toHaveBeenCalled();
+  });
+
+  it("starts the decorative background only once the first screen is up", async () => {
+    await waitFor(() => expect(backgroundAfterScreen).toHaveLength(1), { timeout: 2000 });
+    expect(backgroundAfterScreen).toEqual([true]);
   });
 
   it("does not warm a runtime that cannot load into an unhandled failure", async () => {

@@ -1,5 +1,5 @@
 // Heavy-ish lesson runtime (lazy-loaded by main.ts). Builds the lesson view once
-// and reuses it across lessons via open(id). Wires the editor → live preview →
+// and reuses it across lessons via open(lesson). Wires the editor → live preview →
 // grading for both domains:
 //  - glsl : an animated WebGL preview on a canvas + an offscreen grader.
 //  - three: the opaque-origin sandbox iframe (which both renders the live
@@ -9,7 +9,7 @@ import { el } from "./ui/dom.js";
 import { createEditor, type Editor } from "./ui/editor.js";
 import { evaluate } from "./engine/validate/run.js";
 import { describeCompileLog } from "./engine/validate/describe.js";
-import { domainOf, lessonById, nextLesson, prevLesson, trackOf } from "./engine/content/index.js";
+import { domainOf, nextLesson, prevLesson, trackOf } from "./engine/content/index.js";
 import type { Lesson } from "./engine/content/types.js";
 import { markComplete, type ProgressStore } from "./engine/progress.js";
 import { loadDraft, saveDraft } from "./engine/drafts.js";
@@ -47,7 +47,8 @@ export interface AppCallbacks {
 
 export interface AppController {
   readonly root: HTMLElement;
-  open(lessonId: string): Promise<void>;
+  /** Show a lesson, loaded with its track by the caller (see main.ts). */
+  open(lesson: Lesson): Promise<void>;
   dispose(): void;
 }
 
@@ -331,9 +332,8 @@ export function createApp(callbacks: AppCallbacks): AppController {
     else callbacks.onBack();
   });
 
-  async function open(lessonId: string): Promise<void> {
-    const lesson = lessonById(lessonId);
-    if (!lesson) return;
+  async function open(lesson: Lesson): Promise<void> {
+    const lessonId = lesson.id;
     // Flush a pending debounced save before the editor is reused.
     persistDraft();
     current = lesson;

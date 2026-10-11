@@ -7,7 +7,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getByLabelText, getByRole, getByText, queryByRole, queryByText } from "@testing-library/dom";
 import userEvent, { type UserEvent } from "@testing-library/user-event";
-import { LESSONS, lessonById } from "./engine/content/index.js";
+import { LESSONS, TRACKS, loadTrack } from "./engine/content/index.js";
+import type { Lesson } from "./engine/content/types.js";
 import { evaluate } from "./engine/validate/run.js";
 import type { ValidatorSpec } from "./engine/validate/primitives.js";
 import type { SceneSnapshot, ShaderSnapshot } from "./engine/validate/snapshot.js";
@@ -83,9 +84,14 @@ import { createSceneSandbox } from "./sandbox/scene-sandbox.js";
 
 const PROGRESS_KEY = "glsl-atelier:progress:v1";
 const DRAFTS_KEY = "glsl-atelier:drafts:v1";
-const SOLID = lessonById("glsl-solid-color")!;
-const MESH = lessonById("three-first-mesh")!;
-const LAST = LESSONS[LESSONS.length - 1];
+// Lessons load with their track (main.ts does it before open()); load them all.
+const LOADED = new Map<string, Lesson>(
+  (await Promise.all(TRACKS.map((t) => loadTrack(t.id)))).flatMap((t) => t.lessons.map((l) => [l.id, l] as const)),
+);
+const lesson = (id: string): Lesson => LOADED.get(id) as Lesson;
+const SOLID = lesson("glsl-solid-color");
+const MESH = lesson("three-first-mesh");
+const LAST = lesson(LESSONS[LESSONS.length - 1].id);
 
 let callbacks: { [K in keyof AppCallbacks]: AppCallbacks[K] extends boolean ? boolean : ReturnType<typeof vi.fn> };
 let app: AppController;
@@ -135,7 +141,7 @@ afterEach(() => {
 
 describe("opening a GLSL lesson", () => {
   it("shows the lesson text, position, MDN link and the starter code", async () => {
-    await app.open(SOLID.id);
+    await app.open(SOLID);
     // The lesson title is the page's h1 (SHIG 59).
     expect(getByRole(app.root, "heading", { level: 1 }).textContent).toBe(SOLID.title);
     expect(getByText(app.root, "はじめてのシェーダー · 1 / 3")).toBeTruthy();
@@ -165,7 +171,7 @@ describe("opening a GLSL lesson", () => {
   });
 
   it("keeps the task right above the editor and the result right under the buttons", async () => {
-    await app.open(SOLID.id);
+    await app.open(SOLID);
     // SHIG 30, 32, 12 (goal in view while typing) and 66 (result next to its trigger).
     const order = Array.from(app.root.querySelector(".lesson__work")!.children).map((c) => c.className);
     expect(order.slice(0, 2)).toEqual(["task", "editor-wrap"]);
@@ -175,7 +181,7 @@ describe("opening a GLSL lesson", () => {
   });
 
   it("links both ways from a lesson in the middle", async () => {
-    await app.open(LESSONS[1].id);
+    await app.open(lesson(LESSONS[1].id));
     expect($step("← 前のレッスン")?.getAttribute("href")).toBe(`#${LESSONS[0].id}`);
     expect($step("次のレッスン →")?.getAttribute("href")).toBe(`#${LESSONS[2].id}`);
     // Left = back, right = forward (SHIG 81).
@@ -184,18 +190,18 @@ describe("opening a GLSL lesson", () => {
   });
 
   it("offers only the way back on the last lesson", async () => {
-    await app.open(LAST.id);
+    await app.open(LAST);
     expect($step("次のレッスン →")).toBeNull();
     expect($nav().querySelector("a:not([href])")).toBeNull();
     expect($step("← 前のレッスン")?.getAttribute("href")).toBe(`#${LESSONS[LESSONS.length - 2].id}`);
     // Reopening an earlier lesson brings the forward link back.
-    await app.open(SOLID.id);
+    await app.open(SOLID);
     expect($step("次のレッスン →")).not.toBeNull();
     expect($step("← 前のレッスン")).toBeNull();
   });
 
   it("shows the shader canvas and hides the 3D frame", async () => {
-    await app.open(SOLID.id);
+    await app.open(SOLID);
     expect(app.root.querySelector(".preview-canvas")?.classList.contains("hidden")).toBe(false);
     expect(app.root.querySelector(".preview-frame")?.classList.contains("hidden")).toBe(true);
     expect(preview.resize).toHaveBeenCalled();
@@ -203,7 +209,7 @@ describe("opening a GLSL lesson", () => {
   });
 
   it("compiles the starter code into the live preview shortly after opening", async () => {
-    await app.open(SOLID.id);
+    await app.open(SOLID);
     expect(preview.setSource).not.toHaveBeenCalled();
     await settle();
     expect(preview.setSource).toHaveBeenCalledWith(SOLID.challenge.starterCode);
@@ -211,26 +217,21 @@ describe("opening a GLSL lesson", () => {
   });
 
   it("leaves the MDN link out for a lesson without one, and brings it back (SHIG 37)", async () => {
-    await app.open("glsl-rgb-mix");
+    await app.open(lesson("glsl-rgb-mix"));
     expect(getByText(app.root, "はじめてのシェーダー · 2 / 3")).toBeTruthy();
     // No hidden link without a destination is left in the page.
     expect(app.root.querySelector(".mdn-link")).toBeNull();
     expect(app.root.querySelector("a:not([href])")).toBeNull();
-    await app.open("glsl-solid-color");
+    await app.open(lesson("glsl-solid-color"));
     const mdn = getByRole(app.root, "link", { name: "MDN でもっと学ぶ →" });
     expect(mdn.previousElementSibling?.classList.contains("explain")).toBe(true);
   });
 
-  it("ignores an unknown lesson id", async () => {
-    await app.open("nope");
-    expect(getByRole(app.root, "heading", { level: 1 }).textContent).toBe("");
-    expect(preview.setSource).not.toHaveBeenCalled();
-  });
 });
 
 describe("live preview", () => {
   it("recompiles after typing pauses and surfaces the compiler log", async () => {
-    await app.open(SOLID.id);
+    await app.open(SOLID);
     await settle();
     preview.setSource.mockClear();
     await user.click($editor());
@@ -249,14 +250,14 @@ describe("live preview", () => {
     preview.setSource.mockReturnValue(
       "ERROR: 0:3: 'x' : undeclared identifier\nERROR: 0:3: 'x' : undeclared identifier\nWARNING: 0:9: unused\n\u0000",
     );
-    await app.open(SOLID.id);
+    await app.open(SOLID);
     await settle();
     expect($errorBar().textContent).toBe("3行目: 'x' : undeclared identifier\n9行目: unused");
   });
 
   it("keeps the error bar closed when the log is only the driver's trailing NUL", async () => {
     preview.setSource.mockReturnValue("\u0000");
-    await app.open(SOLID.id);
+    await app.open(SOLID);
     await settle();
     expect(preview.setSource).toHaveBeenCalled();
     expect($errorBar().textContent).toBe("");
@@ -264,7 +265,7 @@ describe("live preview", () => {
   });
 
   it("clears the error once the shader compiles again", async () => {
-    await app.open(SOLID.id);
+    await app.open(SOLID);
     await user.click($editor());
     await user.keyboard("{Control>}a{/Control}{Backspace}x");
     await settle();
@@ -278,7 +279,7 @@ describe("live preview", () => {
 
 describe("checking a GLSL lesson", () => {
   it("lists what is still wrong when the check fails", async () => {
-    await app.open(SOLID.id);
+    await app.open(SOLID);
     await user.click($btn("チェック"));
     expect(getByText($banner(), "もう少し！ 次を確認しましょう:")).toBeTruthy();
     const items = Array.from($banner().querySelectorAll("li")).map((li) => li.textContent);
@@ -298,7 +299,7 @@ describe("checking a GLSL lesson", () => {
   });
 
   it("celebrates, records progress and promotes the next button when the check passes", async () => {
-    await app.open(SOLID.id);
+    await app.open(SOLID);
     await user.click($btn("解答を見る"));
     await user.click($btn("チェック"));
     expect(getByText($banner(), "✓ クリア！ よくできました。")).toBeTruthy();
@@ -317,13 +318,13 @@ describe("checking a GLSL lesson", () => {
     callbacks.reducedMotion = true;
     app = createApp(callbacks as unknown as AppCallbacks);
     document.body.append(app.root);
-    await app.open(SOLID.id);
+    await app.open(SOLID);
     await user.click($btn("チェック"));
     expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest", behavior: "auto" });
   });
 
   it("drops the call to action again when a later check fails", async () => {
-    await app.open(SOLID.id);
+    await app.open(SOLID);
     await user.click($btn("解答を見る"));
     await user.click($btn("チェック"));
     await user.click($btn("リセット"));
@@ -333,14 +334,14 @@ describe("checking a GLSL lesson", () => {
   });
 
   it("checks on Cmd+Enter from inside the editor", async () => {
-    await app.open(SOLID.id);
+    await app.open(SOLID);
     await user.click($editor());
     await user.keyboard("{Meta>}{Enter}{/Meta}");
     expect(getByText($banner(), "もう少し！ 次を確認しましょう:")).toBeTruthy();
   });
 
   it("reports a compile error through the validators", async () => {
-    await app.open(SOLID.id);
+    await app.open(SOLID);
     await user.click($editor());
     await user.keyboard("{Control>}a{/Control}{Backspace}nothing");
     await user.click($btn("チェック"));
@@ -359,7 +360,7 @@ describe("checking a GLSL lesson", () => {
 
 describe("hints", () => {
   it("reveals hints one at a time and says when they run out", async () => {
-    await app.open(SOLID.id);
+    await app.open(SOLID);
     await user.click($btn("ヒント（残り2）"));
     const first = getByText(app.root, SOLID.challenge.hints[0]);
     // The bulb is decoration; hints are announced politely (SHIG 25, 96).
@@ -375,9 +376,9 @@ describe("hints", () => {
   });
 
   it("starts over when another lesson is opened", async () => {
-    await app.open(SOLID.id);
+    await app.open(SOLID);
     await user.click($btn("ヒント（残り2）"));
-    await app.open("glsl-rgb-mix");
+    await app.open(lesson("glsl-rgb-mix"));
     expect(app.root.querySelectorAll(".hint")).toHaveLength(0);
     expect($btn("ヒント（残り2）").disabled).toBe(false);
   });
@@ -393,7 +394,7 @@ describe("hints", () => {
 
 describe("solution, reset and undo", () => {
   it("shows the solution with an undo notice instead of a confirm dialog", async () => {
-    await app.open(SOLID.id);
+    await app.open(SOLID);
     await user.click($btn("解答を見る"));
     expect($editor().value).toBe(SOLID.challenge.solution);
     expect($notice().classList.contains("is-show")).toBe(true);
@@ -404,7 +405,7 @@ describe("solution, reset and undo", () => {
   });
 
   it("undo restores the previous code, forgets the draft and refocuses the editor", async () => {
-    await app.open(SOLID.id);
+    await app.open(SOLID);
     await user.click($btn("解答を見る"));
     await user.click($btn("元に戻す"));
     expect($editor().value).toBe(SOLID.challenge.starterCode);
@@ -414,7 +415,7 @@ describe("solution, reset and undo", () => {
   });
 
   it("undo is inert once the notice is gone", async () => {
-    await app.open(SOLID.id);
+    await app.open(SOLID);
     await user.click($btn("解答を見る"));
     await user.click($btn("元に戻す"));
     await user.click($btn("解答を見る"));
@@ -426,7 +427,7 @@ describe("solution, reset and undo", () => {
   });
 
   it("reset returns to the starter code and clears the check result", async () => {
-    await app.open(SOLID.id);
+    await app.open(SOLID);
     await user.click($btn("解答を見る"));
     await user.click($btn("チェック"));
     expect($banner().classList.contains("banner--show")).toBe(true);
@@ -438,13 +439,13 @@ describe("solution, reset and undo", () => {
   });
 
   it("reset on untouched code shows no notice", async () => {
-    await app.open(SOLID.id);
+    await app.open(SOLID);
     await user.click($btn("リセット"));
     expect($notice().classList.contains("is-show")).toBe(false);
   });
 
   it("typing dismisses the notice", async () => {
-    await app.open(SOLID.id);
+    await app.open(SOLID);
     await user.click($btn("解答を見る"));
     await user.click($editor());
     await user.keyboard(" ");
@@ -461,28 +462,28 @@ describe("solution, reset and undo", () => {
 
 describe("drafts", () => {
   it("saves what the learner typed after a pause and restores it on return", async () => {
-    await app.open(SOLID.id);
+    await app.open(SOLID);
     await user.click($editor());
     await user.keyboard("{Control>}a{/Control}{Backspace}mine");
     expect(drafts()[SOLID.id]).toBeUndefined();
     await settle();
     expect(drafts()[SOLID.id]).toBe("mine");
-    await app.open("glsl-rgb-mix");
-    expect($editor().value).toBe(lessonById("glsl-rgb-mix")!.challenge.starterCode);
-    await app.open(SOLID.id);
+    await app.open(lesson("glsl-rgb-mix"));
+    expect($editor().value).toBe(lesson("glsl-rgb-mix").challenge.starterCode);
+    await app.open(SOLID);
     expect($editor().value).toBe("mine");
   });
 
   it("flushes a pending draft when another lesson opens before the pause", async () => {
-    await app.open(SOLID.id);
+    await app.open(SOLID);
     await user.click($editor());
     await user.keyboard("{Control>}a{/Control}{Backspace}quick");
-    await app.open("glsl-rgb-mix");
+    await app.open(lesson("glsl-rgb-mix"));
     expect(drafts()[SOLID.id]).toBe("quick");
   });
 
   it("keeps no draft for code equal to the starter", async () => {
-    await app.open(SOLID.id);
+    await app.open(SOLID);
     await user.click($editor());
     await user.keyboard("x{Backspace}");
     await settle();
@@ -498,7 +499,7 @@ describe("storage switched off", () => {
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
       throw new Error("SecurityError");
     });
-    await app.open(SOLID.id);
+    await app.open(SOLID);
     expect($editor().value).toBe(SOLID.challenge.starterCode);
     await user.click($btn("解答を見る"));
     await user.click($btn("チェック"));
@@ -516,7 +517,7 @@ describe("next lesson", () => {
   };
 
   it("opens the following lesson in catalogue order", async () => {
-    await app.open(SOLID.id);
+    await app.open(SOLID);
     await pass();
     await user.click($btn("次のレッスン →"));
     expect(callbacks.onOpen).toHaveBeenCalledWith(LESSONS[1].id);
@@ -552,7 +553,7 @@ describe("next lesson", () => {
     };
     expect(evaluate(LAST.challenge.validators, lastLessonFrame(LAST.challenge.solution)).passed).toBe(true);
     sandbox.run.mockImplementation(async (code) => lastLessonFrame(code));
-    await app.open(LAST.id);
+    await app.open(LAST);
     await pass();
     await user.click($btn("レッスン一覧へ"));
     expect(callbacks.onBack).toHaveBeenCalled();
@@ -571,7 +572,7 @@ describe("next lesson", () => {
 
 describe("opening a Three.js lesson", () => {
   it("switches to the sandbox frame and JS editor", async () => {
-    await app.open(MESH.id);
+    await app.open(MESH);
     expect(getByText(app.root, "Three.js")).toBeTruthy();
     expect(getByText(app.root, "コードエディタ (Three.js / JavaScript)")).toBeTruthy();
     expect(getByText(app.root, "シーンの基本 · 1 / 4")).toBeTruthy();
@@ -587,7 +588,7 @@ describe("opening a Three.js lesson", () => {
   });
 
   it("shows a runtime error from the learner's code in the error bar", async () => {
-    await app.open(MESH.id);
+    await app.open(MESH);
     await user.click($editor());
     await user.keyboard("{Control>}a{/Control}{Backspace}throw boom");
     await settle();
@@ -596,7 +597,7 @@ describe("opening a Three.js lesson", () => {
   });
 
   it("fails the check with the missing pieces, then passes with the solution", async () => {
-    await app.open(MESH.id);
+    await app.open(MESH);
     await user.click($btn("チェック"));
     const items = Array.from($banner().querySelectorAll("li")).map((li) => li.textContent);
     expect(items).toContain("コードに必要な記述が見つかりません");
@@ -611,7 +612,7 @@ describe("opening a Three.js lesson", () => {
   });
 
   it("says the check is running while the sandbox is busy, and allows only one run", async () => {
-    await app.open(MESH.id);
+    await app.open(MESH);
     await settle();
     sandbox.run.mockClear();
     let finish!: (snap: SceneSnapshot) => void;
@@ -638,12 +639,12 @@ describe("opening a Three.js lesson", () => {
   });
 
   it("discards a result that arrives after another lesson was opened", async () => {
-    await app.open(MESH.id);
+    await app.open(MESH);
     await settle();
     let finish!: (snap: SceneSnapshot) => void;
     sandbox.run.mockImplementationOnce(() => new Promise<SceneSnapshot>((r) => (finish = r)));
     await user.click($btn("チェック"));
-    await app.open(SOLID.id);
+    await app.open(SOLID);
     // Opening a lesson never leaves the button stuck on チェック中….
     expect($btn("チェック").disabled).toBe(false);
     finish(fakeSceneSnapshot(MESH.challenge.solution));
@@ -655,12 +656,12 @@ describe("opening a Three.js lesson", () => {
   });
 
   it("reuses one sandbox across lessons and disposes every runtime once", async () => {
-    await app.open(MESH.id);
+    await app.open(MESH);
     await settle();
-    await app.open("three-color");
+    await app.open(lesson("three-color"));
     await settle();
     expect(vi.mocked(createSceneSandbox)).toHaveBeenCalledTimes(1);
-    await app.open(SOLID.id);
+    await app.open(SOLID);
     await settle();
     await user.click($btn("チェック"));
     app.dispose();

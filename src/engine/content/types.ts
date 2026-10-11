@@ -1,8 +1,9 @@
 // Content is pure data. Tracks → Lessons → Challenge. Each challenge composes
 // ValidatorSpec primitives. A track's `domain` decides which runtime executes &
 // snapshots the learner's code: the WebGL shader runtime ("glsl") or the
-// Three.js scene sandbox ("three"). Authored under content/*.ts, aggregated in
-// content/index.ts.
+// Three.js scene sandbox ("three"). Authored one module per track under
+// content/tracks/; content/index.ts holds the catalogue and loads each track's
+// module on demand.
 
 import type { ValidatorSpec } from "../validate/primitives.js";
 
@@ -20,20 +21,30 @@ export interface Challenge {
   readonly solution: string;
 }
 
-export interface Lesson {
+/** What the catalogue (the first screen) knows about a lesson. */
+export interface LessonMeta {
   readonly id: string;
   readonly title: string;
+}
+
+/** What the catalogue knows about a track. Only this ships in the initial
+ *  bundle; the lessons themselves load with their track (see index.ts). */
+export interface TrackMeta {
+  readonly id: string;
+  readonly domain: Domain;
+  readonly title: string;
+  readonly summary: string;
+  readonly icon: string;
+  readonly lessons: readonly LessonMeta[];
+}
+
+export interface Lesson extends LessonMeta {
   /** Short explanation (tiny markdown-lite: paragraphs + `code`). */
   readonly explanation: string;
   readonly mdnPath?: string;
   readonly challenge: Challenge;
 }
 
-export interface Track {
-  readonly id: string;
-  readonly domain: Domain;
-  readonly title: string;
-  readonly summary: string;
-  readonly icon: string;
+export interface Track extends TrackMeta {
   readonly lessons: readonly Lesson[];
 }

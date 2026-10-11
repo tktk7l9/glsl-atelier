@@ -8,10 +8,11 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 import { getByRole, getByText, waitFor } from "@testing-library/dom";
 import userEvent from "@testing-library/user-event";
 import { LESSONS, lessonById } from "./engine/content/index.js";
+import type { Lesson } from "./engine/content/types.js";
 
 const controller = {
   root: document.createElement("div"),
-  open: vi.fn<(id: string) => Promise<void>>(async () => undefined),
+  open: vi.fn<(lesson: Lesson) => Promise<void>>(async () => undefined),
   dispose: vi.fn(),
 };
 controller.root.className = "lesson";
@@ -32,6 +33,31 @@ const createApp = vi.fn((cb: Callbacks) => {
   return controller;
 });
 vi.mock("./app.js", () => ({ createApp: (cb: Callbacks) => createApp(cb) }));
+
+// Track loading goes through the real loader unless a test swaps in its own
+// (a slow or failing network).
+// (Hoisted: the module mock runs before this file's own top-level code.)
+const loader = vi.hoisted(() => ({
+  swap: null as ((id: string) => Promise<Lesson>) | null,
+  real: null as unknown as (id: string) => Promise<Lesson>,
+}));
+vi.mock("./engine/content/index.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./engine/content/index.js")>();
+  loader.real = actual.loadLesson;
+  return { ...actual, loadLesson: (id: string) => (loader.swap ?? actual.loadLesson)(id) };
+});
+const opened = (id: string) => expect.objectContaining({ id });
+
+/** A promise the test settles by hand. */
+function deferred<T>() {
+  let resolve!: (v: T) => void;
+  let reject!: (e: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
 
 const createBackground = vi.fn();
 vi.mock("./viz/background.js", () => ({
@@ -124,7 +150,7 @@ describe("routing", () => {
     Object.defineProperty(window, "scrollY", { value: 320, configurable: true });
     await userEvent.click(getByRole(main(), "button", { name: `${SECOND.title}（未クリア）` }));
     expect(location.hash).toBe(`#${SECOND.id}`);
-    await waitFor(() => expect(controller.open).toHaveBeenCalledWith(SECOND.id));
+    await waitFor(() => expect(controller.open).toHaveBeenCalledWith(opened(SECOND.id)));
     expect(appsCreated).toBe(1);
     expect(callbacks?.reducedMotion).toBe(true);
     expect(main().firstElementChild).toBe(controller.root);
@@ -150,7 +176,7 @@ describe("routing", () => {
 
   it("reuses the same lesson controller for the next lesson", async () => {
     callbacks!.onOpen(LESSONS[2].id);
-    await waitFor(() => expect(controller.open).toHaveBeenLastCalledWith(LESSONS[2].id));
+    await waitFor(() => expect(controller.open).toHaveBeenLastCalledWith(opened(LESSONS[2].id)));
     expect(appsCreated).toBe(1);
     expect(document.title).toBe(`${LESSONS[2].title} — GLSL Atelier`);
   });
@@ -184,7 +210,7 @@ describe("routing", () => {
   it("deep-links straight to a lesson", async () => {
     const last = LESSONS[LESSONS.length - 1];
     location.hash = `#${last.id}`;
-    await waitFor(() => expect(controller.open).toHaveBeenLastCalledWith(last.id));
+    await waitFor(() => expect(controller.open).toHaveBeenLastCalledWith(opened(last.id)));
     expect(crumb().textContent).toBe(`空気感: 霧と影 › ${last.title}`);
     expect(lessonById(last.id)?.title).toBe(last.title);
   });
@@ -193,7 +219,77 @@ describe("routing", () => {
     const last = LESSONS[LESSONS.length - 1];
     expect(location.hash).toBe(`#${last.id}`);
     callbacks!.onOpen(last.id);
-    await waitFor(() => expect(controller.open).toHaveBeenCalledWith(last.id));
+    await waitFor(() => expect(controller.open).toHaveBeenCalledWith(opened(last.id)));
     expect(location.hash).toBe(`#${last.id}`);
+  });
+});
+
+describe("loading a track", () => {
+  const goTo = async (id: string | null): Promise<void> => {
+    location.hash = id ? `#${id}` : "#";
+    await new Promise((r) => setTimeout(r, 20));
+  };
+
+  it("keeps the current screen until the lesson's track has arrived (never an empty main)", async () => {
+    await goTo(null);
+    await waitFor(() => expect(main().querySelector("h1")?.textContent).toBe("GLSL Atelier"));
+    const slow = deferred<Lesson>();
+    const target = LESSONS[3];
+    loader.swap = () => slow.promise;
+    await goTo(target.id);
+    // Still the catalogue while the track is on its way.
+    expect(main().querySelector("h1")?.textContent).toBe("GLSL Atelier");
+    expect(controller.open).not.toHaveBeenCalledWith(opened(target.id));
+    slow.resolve(await loader.real(target.id));
+    await waitFor(() => expect(controller.open).toHaveBeenLastCalledWith(opened(target.id)));
+    expect(main().firstElementChild).toBe(controller.root);
+    loader.swap = null;
+  });
+
+  it("drops a lesson that arrives after the learner has moved on", async () => {
+    const slow = deferred<Lesson>();
+    const [stale, fresh] = [LESSONS[4], LESSONS[5]];
+    loader.swap = (id) => (id === stale.id ? slow.promise : loader.real(id));
+    await goTo(stale.id);
+    await goTo(fresh.id);
+    await waitFor(() => expect(controller.open).toHaveBeenLastCalledWith(opened(fresh.id)));
+    slow.resolve(await loader.real(stale.id));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(controller.open).not.toHaveBeenCalledWith(opened(stale.id));
+    expect(document.title).toBe(`${fresh.title} — GLSL Atelier`);
+    loader.swap = null;
+  });
+
+  it("says plainly when a lesson cannot be fetched, with a way back and a reload, and loads it on the next try (SHIG 55, 60, 94)", async () => {
+    const target = LESSONS[6];
+    loader.swap = () => Promise.reject(new Error("offline"));
+    await goTo(target.id);
+    const alert = await waitFor(() => getByRole(main(), "alert"));
+    const heading = getByRole(alert, "heading", { level: 1, name: "レッスンを開けませんでした" });
+    expect(document.activeElement).toBe(heading);
+    expect(alert.textContent).toContain("ページを読み込み直してください");
+    expect(getByRole(alert, "button", { name: "読み込み直す" }).getAttribute("type")).toBe("button");
+    expect(getByRole(alert, "link", { name: "← レッスン一覧" }).getAttribute("href")).toBe("#");
+    expect(topbarBack().classList.contains("is-show")).toBe(true);
+    expect(document.title).toBe("レッスンを開けませんでした — GLSL Atelier");
+    expect(controller.open).not.toHaveBeenCalledWith(opened(target.id));
+    // The network is back: the same lesson opens on the next try.
+    loader.swap = null;
+    callbacks!.onOpen(target.id);
+    await waitFor(() => expect(controller.open).toHaveBeenLastCalledWith(opened(target.id)));
+    expect(main().firstElementChild).toBe(controller.root);
+  });
+
+  it("does not show a failure once the learner has left for the catalogue", async () => {
+    const failing = deferred<Lesson>();
+    loader.swap = () => failing.promise;
+    await goTo(LESSONS[7].id);
+    await goTo(null);
+    await waitFor(() => expect(main().querySelector("h1")?.textContent).toBe("GLSL Atelier"));
+    failing.reject(new Error("offline"));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(main().querySelector("[role=alert]")).toBeNull();
+    expect(document.title).toBe(BASE_TITLE);
+    loader.swap = null;
   });
 });

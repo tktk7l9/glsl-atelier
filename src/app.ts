@@ -78,7 +78,6 @@ export function createApp(callbacks: AppCallbacks): AppController {
   const steps = el("span", { class: "lesson__steps" });
   const prevLink = el("a", { class: "step-link", text: "← 前のレッスン" });
   const nextLink = el("a", { class: "step-link", text: "次のレッスン →" });
-  steps.append(prevLink, nextLink);
   const navRight = el("span", { class: "lesson__nav-right" });
   navRight.append(position, steps);
   nav.append(backLink, navRight);
@@ -125,7 +124,9 @@ export function createApp(callbacks: AppCallbacks): AppController {
   const bannerNext = el("button", { class: "btn btn--primary", attrs: { type: "button" } });
   // Hints are appended out of focus; announce them (SHIG 25).
   const hints = el("div", { class: "hints", attrs: { "aria-live": "polite" } });
-  doc.append(nav, title, explain, mdn);
+  // The MDN link is put after the explanation only for lessons that have one
+  // (see open()).
+  doc.append(nav, title, explain);
 
   // ---- workbench panel ----
   // The task sits right above the editor so the goal is in view while typing
@@ -343,10 +344,11 @@ export function createApp(callbacks: AppCallbacks): AppController {
     setChecking(false);
     const prev = prevLesson(lessonId);
     const next = nextLesson(lessonId);
-    prevLink.hidden = !prev;
-    nextLink.hidden = !next;
     if (prev) prevLink.setAttribute("href", `#${prev.id}`);
     if (next) nextLink.setAttribute("href", `#${next.id}`);
+    // Only a step with somewhere to go is in the nav: a link without a
+    // destination means nothing, even hidden (SHIG 37).
+    steps.replaceChildren(...(prev ? [prevLink] : []), ...(next ? [nextLink] : []));
     const track = trackOf(lessonId);
     position.textContent = track
       ? `${track.title} · ${track.lessons.findIndex((l) => l.id === lessonId) + 1} / ${track.lessons.length}`
@@ -361,9 +363,11 @@ export function createApp(callbacks: AppCallbacks): AppController {
     if (lesson.mdnPath) {
       mdn.textContent = "MDN でもっと学ぶ →";
       mdn.setAttribute("href", `https://developer.mozilla.org${lesson.mdnPath}`);
-      mdn.classList.remove("hidden");
+      explain.after(mdn);
     } else {
-      mdn.classList.add("hidden");
+      // A link with nowhere to go has no meaning, even hidden (SHIG 37), and
+      // crawlers flag it; leave it out of the page instead of hiding it.
+      mdn.remove();
     }
 
     editor.setLang(domain === "glsl" ? "glsl" : "js");

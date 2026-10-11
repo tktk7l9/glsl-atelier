@@ -393,6 +393,54 @@ const mosaic = (x: number, y: number, coarse: (v: number) => number): RGB => pic
 const scanned = (x: number, y: number, dark: (row: number) => boolean, dim = 0.5): RGB =>
   rgb(picture(x, y).map((c) => c * (dark(y * SIZE) ? dim : 1)));
 
+/** A convolution-track blur: the weighted average of the picture at the taps
+ *  `offsets` gives (in units of `d`), each with its weight. */
+function convolve(x: number, y: number, d: number, taps: ReadonlyArray<readonly [number, number, number]>, divisor?: number): RGB {
+  const sum = [0, 0, 0];
+  let total = 0;
+  for (const [i, j, w] of taps) {
+    const c = picture(x + i * d, y + j * d);
+    sum[0] += c[0] * w;
+    sum[1] += c[1] * w;
+    sum[2] += c[2] * w;
+    total += w;
+  }
+  const div = divisor ?? total;
+  return rgb(sum.map((v) => v / div));
+}
+
+/** The (2n + 1)² square of tap offsets, all weighted 1, starting at `from`
+ *  (the centred square starts at -n). */
+const square = (n: number, from = -n): Array<[number, number, number]> => {
+  const taps: Array<[number, number, number]> = [];
+  for (let j = from; j <= from + 2 * n; j++) for (let i = from; i <= from + 2 * n; i++) taps.push([i, j, 1]);
+  return taps;
+};
+
+/** The blur lesson's taps: 5×5 points 0.011 apart (also the sharpen lesson's blur). */
+const BLUR_D = 0.011;
+const blurred = (x: number, y: number): RGB => convolve(x, y, BLUR_D, square(2));
+
+/** The sharpen lesson: the picture plus `k` times its difference from the blur. */
+function sharpened(x: number, y: number, k: number): RGB {
+  const c = picture(x, y);
+  const b = blurred(x, y);
+  return rgb(c.map((v, i) => v + (v - b[i]) * k));
+}
+
+/** The edge lesson: luminance differences 0.015 to either side, `combine`
+ *  turning (gx, gy) into the edge strength, white where it reaches 0.05. */
+const lumAt = (x: number, y: number): number => {
+  const c = picture(x, y);
+  return c[0] * 0.2126 + c[1] * 0.7152 + c[2] * 0.0722;
+};
+function edges(x: number, y: number, combine: (gx: number, gy: number) => number, threshold = (e: number) => step(0.05, e)): RGB {
+  const d = 0.015;
+  const gx = lumAt(x + d, y) - lumAt(x - d, y);
+  const gy = lumAt(x, y + d) - lumAt(x, y - d);
+  return grey(threshold(combine(gx, gy)));
+}
+
 /** JS ports of (starter, solution) for the shader lessons added in 2026-10. */
 const SHADER_MODELS: Record<string, { starter: Shade; solution: Shade }> = {
   "glsl-repeat-dots": {
@@ -592,6 +640,19 @@ const SHADER_MODELS: Record<string, { starter: Shade; solution: Shade }> = {
     starter: (x, y) => picture(x, y),
     solution: (x, y) => scanned(x, y, (row) => glslMod(row, 4) < 2),
   },
+  // 2026-10, sixth batch.
+  "glsl-blur": {
+    starter: (x, y) => picture(x, y),
+    solution: blurred,
+  },
+  "glsl-sharpen": {
+    starter: (x, y) => picture(x, y),
+    solution: (x, y) => sharpened(x, y, 1.5),
+  },
+  "glsl-edge": {
+    starter: (x, y) => edges(x, y, (gx) => Math.abs(gx)),
+    solution: (x, y) => edges(x, y, Math.hypot),
+  },
 };
 
 describe("shader lessons modelled on the grader's sample grid", () => {
@@ -606,7 +667,7 @@ describe("shader lessons modelled on the grader's sample grid", () => {
   }
 });
 
-/** Plausible wrong answers to the 2026-10 (third and fourth batch) shader
+/** Plausible wrong answers to the 2026-10 (third to sixth batch) shader
  *  lessons; each must be rejected. The source is the solution's, so only the
  *  drawing decides. */
 const SHADER_NEAR_MISSES: Record<string, ReadonlyArray<readonly [string, Shade]>> = {
@@ -706,6 +767,36 @@ const SHADER_NEAR_MISSES: Record<string, ReadonlyArray<readonly [string, Shade]>
     ["vertical lines", (x, y) => rgb(picture(x, y).map((c) => c * (glslMod(x * SIZE, 4) < 2 ? 0.5 : 1)))],
     ["lines too dark (0.3)", (x, y) => scanned(x, y, (row) => glslMod(row, 4) < 2, 0.3)],
   ],
+  // 2026-10, sixth batch.
+  "glsl-blur": [
+    ["divided by 9 instead of 25 (too bright)", (x, y) => convolve(x, y, BLUR_D, square(2), 9)],
+    ["the sum, not divided", (x, y) => convolve(x, y, BLUR_D, square(2), 1)],
+    ["sideways only (y kept at 0)", (x, y) => convolve(x, y, BLUR_D, square(2).filter(([, j]) => j === 0))],
+    ["up and down only (x kept at 0)", (x, y) => convolve(x, y, BLUR_D, square(2).filter(([i]) => i === 0))],
+    ["the loops from 0 to 4 (not centred)", (x, y) => convolve(x, y, BLUR_D, square(2, 0))],
+    ["the offsets not multiplied by d", (x, y) => convolve(x, y, 1, square(2))],
+  ],
+  "glsl-sharpen": [
+    ["the difference the other way round (blur(st) - col: blurrier)", (x, y) => sharpened(x, y, -1.5)],
+    ["adding the blur itself", (x, y) => rgb(picture(x, y).map((v, i) => v + blurred(x, y)[i]))],
+    ["the difference alone (col = detail * 1.5)", (x, y) => rgb(picture(x, y).map((v, i) => (v - blurred(x, y)[i]) * 1.5))],
+    ["the blur alone", blurred],
+  ],
+  "glsl-edge": [
+    ["the up-down difference only", (x, y) => edges(x, y, (_gx, gy) => Math.abs(gy))],
+    ["the signed sum gx + gy", (x, y) => edges(x, y, (gx, gy) => gx + gy)],
+    ["the signed max(gx, gy)", (x, y) => edges(x, y, Math.max)],
+    [
+      "gy from one side only (lum(st + d) - lum(st))",
+      (x, y) => {
+        const d = 0.015;
+        const gx = lumAt(x + d, y) - lumAt(x - d, y);
+        return grey(step(0.05, Math.hypot(gx, lumAt(x, y + d) - lumAt(x, y))));
+      },
+    ],
+    ["the step turned round (black lines on white)", (x, y) => edges(x, y, Math.hypot, (e) => step(e, 0.05))],
+    ["the strength without step (dim grey lines)", (x, y) => edges(x, y, Math.hypot, (e) => e)],
+  ],
 };
 
 describe("shader near misses are rejected", () => {
@@ -719,8 +810,8 @@ describe("shader near misses are rejected", () => {
   }
 });
 
-/** Other correct ways to write the fifth-batch shader lessons; each must pass
- *  (lenient input, SHIG 50). */
+/** Other correct ways to write the fifth- and sixth-batch shader lessons; each
+ *  must pass (lenient input, SHIG 50). */
 const SHADER_VARIANTS: Record<string, ReadonlyArray<readonly [string, Shade]>> = {
   "glsl-spiral": [["the mirror image (a * 3.0 - r * 8.0)", (x, y) => spiral(x, y, (a, r) => a * 3 - r * 8)]],
   "glsl-grayscale": [["the Rec.601 weights (0.299, 0.587, 0.114)", (x, y) => filtered(x, y, (c) => weighted(c, [0.299, 0.587, 0.114]))]],
@@ -731,6 +822,26 @@ const SHADER_VARIANTS: Record<string, ReadonlyArray<readonly [string, Shade]>> =
     ["fract(st.y * 32.0) < 0.5", (x, y) => scanned(x, y, (row) => fract((row + 0.5) / 4) < 0.5)],
     ["lines at 0.4", (x, y) => scanned(x, y, (row) => glslMod(row, 4) < 2, 0.4)],
     ["lines at 0.6", (x, y) => scanned(x, y, (row) => glslMod(row, 4) < 2, 0.6)],
+  ],
+  // 2026-10, sixth batch.
+  "glsl-blur": [
+    ["a 3×3 kernel twice as far apart (the same reach)", (x, y) => convolve(x, y, BLUR_D * 2, square(1))],
+    ["a 7×7 kernel over the same reach", (x, y) => convolve(x, y, (BLUR_D * 2) / 3, square(3))],
+    [
+      "binomial weights (1, 4, 6, 4, 1) instead of equal ones",
+      (x, y) => {
+        const w = [1, 4, 6, 4, 1];
+        return convolve(x, y, BLUR_D, square(2).map(([i, j]) => [i, j, w[i + 2] * w[j + 2]] as [number, number, number]));
+      },
+    ],
+  ],
+  "glsl-sharpen": [
+    ["an amount of 1.25", (x, y) => sharpened(x, y, 1.25)],
+    ["an amount of 1.75", (x, y) => sharpened(x, y, 1.75)],
+  ],
+  "glsl-edge": [
+    ["abs(gx) + abs(gy)", (x, y) => edges(x, y, (gx, gy) => Math.abs(gx) + Math.abs(gy))],
+    ["max(abs(gx), abs(gy))", (x, y) => edges(x, y, (gx, gy) => Math.max(Math.abs(gx), Math.abs(gy)))],
   ],
 };
 
@@ -940,6 +1051,22 @@ function instanceTint(hit: THREE.Intersection | undefined): RGB {
   return [c[i], c[i + 1], c[i + 2]];
 }
 
+/** The linear vertex colour a material with `vertexColors` gets where `hit`
+ *  lands: the hit triangle's three colours blended by its barycentric
+ *  coordinates, multiplying the material colour; white otherwise. */
+function vertexTint(m: THREE.Material, hit: THREE.Intersection | undefined): RGB {
+  if (!m.vertexColors || !hit?.face || !hit.barycoord) return [1, 1, 1];
+  const colors = (hit.object as THREE.Mesh).geometry.getAttribute("color") as THREE.BufferAttribute;
+  const { a, b, c } = hit.face;
+  const v = THREE.Triangle.getInterpolatedAttribute(colors, a, b, c, hit.barycoord, new THREE.Vector3());
+  return [v.x, v.y, v.z];
+}
+
+/** Without a `color` attribute, vertexColors reads whatever the GPU's default
+ *  attribute value for that slot happens to be, so the model will not guess. */
+const vertexColoursKnown = (o: THREE.Object3D, m: THREE.Material): boolean =>
+  !m.vertexColors || (o instanceof THREE.Mesh && o.geometry.getAttribute("color") !== undefined);
+
 /** The colour (as written to the canvas) of a flat-shadable surface where
  *  `hit` lands (undefined for a point of a Points object), under the scene's
  *  ambient and hemisphere `lights`. */
@@ -960,7 +1087,9 @@ function flatColor(m: THREE.Material, hit: THREE.Intersection | undefined, light
     return encode(out[0], out[1], out[2]);
   }
   const { color, map } = m as THREE.MeshBasicMaterial;
-  const [tr, tg, tb] = instanceTint(hit);
+  const [ir, ig, ib] = instanceTint(hit);
+  const [vr, vg, vb] = vertexTint(m, hit);
+  const [tr, tg, tb] = [ir * vr, ig * vg, ib * vb];
   if (!map) return encode(color.r * tr, color.g * tg, color.b * tb);
   // Never flagged with needsUpdate ⇒ WebGL samples three's empty (black) texture.
   if (map.version === 0 || !hit?.uv) return [0, 0, 0];
@@ -1021,7 +1150,7 @@ function flatRender({ scene, camera, renderer }: SceneRun, aspect: number): Samp
     if (o === scene || o instanceof THREE.Group || o instanceof THREE.Light) return;
     const material = (o as THREE.Mesh).material;
     if ((o instanceof THREE.Mesh || o instanceof THREE.Points || o instanceof THREE.Sprite) && !Array.isArray(material)) {
-      shadable &&= flatShadable(material, directLit);
+      shadable &&= flatShadable(material, directLit) && vertexColoursKnown(o, material);
       if (o instanceof THREE.Points) points.push(o);
     } else {
       shadable = false;
@@ -1048,6 +1177,11 @@ function flatRender({ scene, camera, renderer }: SceneRun, aspect: number): Samp
         if (hit.object instanceof THREE.Points) continue; // squares, handled below
         // The Raycaster ignores `visible`; the renderer skips hidden subtrees.
         if (!drawn(hit.object)) continue;
+        // WebGL draws whole triangles only: a vertex (or index) left over at
+        // the end of the buffer is ignored, but the Raycaster builds a
+        // triangle from it and the missing entries after it, and reports a
+        // hit at NaN distance.
+        if (Number.isNaN(hit.distance)) continue;
         const m = (hit.object as THREE.Mesh).material as THREE.Material;
         // A clipped fragment is discarded, so the ray goes on to what is behind.
         if (clipped(renderer, m, hit.point)) continue;
@@ -1163,6 +1297,9 @@ const FLAT_LESSONS = [
   "three-data-texture",
   "three-texture-repeat",
   "three-canvas-texture",
+  "three-triangles",
+  "three-index",
+  "three-vertex-colors",
   "three-lathe",
   "three-extrude",
   "three-tube",
@@ -1210,8 +1347,14 @@ describe("unlit Three.js lessons judged on a ray-cast frame, pixels included", (
   }
 });
 
-/** Plausible wrong answers to the 2026-10 (third batch) unlit scene lessons,
- *  as edits of the solution; each must be rejected at both preview shapes. */
+/** The second triangle of the triangle lesson's solution, after its first corner. */
+const SECOND_TRIANGLE_TAIL = "   1.5,  1.5, 0,  // 右上\n  -1.5,  1.5, 0,  // 左上（左下 → 右上 → 左上 で反時計回り）\n";
+/** The vertex-colour lesson's colours, as written in its solution. */
+const RGB_COLOURS = "  1, 0, 0,  // 上: 赤\n  0, 1, 0,  // 左下: 緑\n  0, 0, 1,  // 右下: 青\n";
+
+/** Plausible wrong answers to the 2026-10 (third to sixth batch) unlit scene
+ *  lessons, as edits of the solution; each must be rejected at both preview
+ *  shapes. */
 const SCENE_NEAR_MISSES: Record<string, ReadonlyArray<readonly [string, (solution: string) => string]>> = {
   "three-clipping": [
     ["planes without renderer.localClippingEnabled", (s) => s.replace("renderer.localClippingEnabled = true;\n", "")],
@@ -1284,10 +1427,28 @@ const SCENE_NEAR_MISSES: Record<string, ReadonlyArray<readonly [string, (solutio
         ),
     ],
   ],
+  // 2026-10, sixth batch.
+  "three-triangles": [
+    ["the second triangle clockwise (seen from behind, so not drawn)", (s) => s.replace(SECOND_TRIANGLE_TAIL, "  -1.5,  1.5, 0,  // 左上\n   1.5,  1.5, 0,  // 右上\n")],
+    ["only two more vertices (a leftover vertex draws nothing)", (s) => s.replace("  -1.5,  1.5, 0,  // 左上（左下 → 右上 → 左上 で反時計回り）\n", "")],
+    ["the first triangle again", (s) => s.replace(SECOND_TRIANGLE_TAIL, "   1.5, -1.5, 0,  // 右下\n   1.5,  1.5, 0,  // 右上\n")],
+  ],
+  "three-index": [
+    ["the second triangle clockwise (0, 3, 2)", (s) => s.replace("0, 2, 3,", "0, 3, 2,")],
+    ["four indices (one triangle and a leftover)", (s) => s.replace("  0, 2, 3,  // 左上の三角形（どちらも反時計回り）\n", "  3,\n")],
+  ],
+  "three-vertex-colors": [
+    ["the colours without vertexColors (all white)", (s) => s.replace("{ vertexColors: true }", "{ color: 'white' } // vertexColors")],
+    [
+      "the colours in the wrong order (blue at the top, red bottom right)",
+      (s) => s.replace("  1, 0, 0,  // 上: 赤\n", "  0, 0, 1,  // 上: 青\n").replace("  0, 0, 1,  // 右下: 青\n", "  1, 0, 0,  // 右下: 赤\n"),
+    ],
+    ["the colours written as 0–255", (s) => s.replace(RGB_COLOURS, "  255, 0, 0,\n  0, 255, 0,\n  0, 0, 255,\n")],
+  ],
 };
 
-/** Other correct ways to write the fifth-batch unlit scene lessons; each must
- *  pass at both preview shapes (lenient input, SHIG 50). */
+/** Other correct ways to write the fifth- and sixth-batch unlit scene lessons;
+ *  each must pass at both preview shapes (lenient input, SHIG 50). */
 const SCENE_VARIANTS: Record<string, ReadonlyArray<readonly [string, (solution: string) => string]>> = {
   "three-background": [
     ["renderer.setClearColor instead", (s) => s.replace("scene.background = new THREE.Color('lightblue');", "renderer.setClearColor('lightblue'); // scene.background")],
@@ -1296,6 +1457,47 @@ const SCENE_VARIANTS: Record<string, ReadonlyArray<readonly [string, (solution: 
   "three-hemisphere-light": [["hex colours", (s) => s.replace("'skyblue', 'darkorange'", "0x87ceeb, 0xff8c00")]],
   "three-look-at": [["lookAt(x, y, z)", (s) => s.replace("lookAt(target.position)", "lookAt(-0.25, 2.3, 0)")]],
   "three-sprite": [["scaled to 1.2", (s) => s.replace("orb.position.set", "orb.scale.set(1.2, 1.2, 1);\n  orb.position.set")]],
+  // 2026-10, sixth batch.
+  "three-triangles": [
+    [
+      "clockwise, drawn with side: THREE.DoubleSide",
+      (s) =>
+        s
+          .replace(SECOND_TRIANGLE_TAIL, "  -1.5,  1.5, 0,  // 左上\n   1.5,  1.5, 0,  // 右上\n")
+          .replace("{ color: 'tomato' }", "{ color: 'tomato', side: THREE.DoubleSide }"),
+    ],
+    [
+      "the second triangle starting from its top-left corner",
+      (s) => s.replace("  -1.5, -1.5, 0,  // 左下\n" + SECOND_TRIANGLE_TAIL, "  -1.5,  1.5, 0,  // 左上\n  -1.5, -1.5, 0,  // 左下\n   1.5,  1.5, 0,  // 右上\n"),
+    ],
+  ],
+  "three-index": [
+    [
+      "the two triangles the other way round",
+      (s) => s.replace("  0, 1, 2,  // 右下の三角形\n  0, 2, 3,", "  0, 2, 3,  // 左上の三角形\n  0, 1, 2,"),
+    ],
+    [
+      "a Uint16Array index in a BufferAttribute",
+      (s) => s.replace(/geo\.setIndex\(\[([\s\S]*?)\]\);/, "geo.setIndex(new THREE.BufferAttribute(new Uint16Array([$1]), 1));"),
+    ],
+  ],
+  "three-vertex-colors": [
+    [
+      "a Float32BufferAttribute and a white material colour",
+      (s) =>
+        s
+          .replace("new THREE.BufferAttribute(colors, 3)", "new THREE.Float32BufferAttribute(colors, 3)")
+          .replace("{ vertexColors: true }", "{ color: 'white', vertexColors: true }"),
+    ],
+    [
+      "colours from THREE.Color ('red', 'lime', 'blue')",
+      (s) =>
+        s.replace(
+          "const colors = new Float32Array([\n" + RGB_COLOURS + "]);\n",
+          "const colors = new Float32Array(9);\n['red', 'lime', 'blue'].forEach((name, i) => new THREE.Color(name).toArray(colors, i * 3));\n",
+        ),
+    ],
+  ],
 };
 
 describe("unlit scene variants are accepted", () => {
@@ -1438,6 +1640,42 @@ describe("the flat model itself", () => {
   it("clears to a Color background, as written (sRGB)", () => {
     const frame = frameOf("scene.background = new THREE.Color('lightblue');")!;
     expect(at(frame, 0.5, 0.5).map((c) => Math.round(c * 255))).toEqual([173, 216, 230]);
+  });
+
+  // A triangle covering the middle of the view: red at the top, green bottom
+  // left, blue bottom right.
+  const rgbTriangle = (colors: string, material = "{ vertexColors: true }") =>
+    "const geo = new THREE.BufferGeometry();\n" +
+    "geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([0, 4, 0, -4, -2, 0, 4, -2, 0]), 3));\n" +
+    colors +
+    `scene.add(new THREE.Mesh(geo, new THREE.MeshBasicMaterial(${material})));\n`;
+  const colorAttribute = "geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]), 3));\n";
+
+  it("blends vertex colours by the hit's barycentric coordinates, in linear light", () => {
+    const frame = frameOf(rgbTriangle(colorAttribute), 1)!;
+    // The sample nearest the centre lies 0.184 left of and below the origin:
+    // barycentric (0.303, 0.372, 0.326) of red, green and blue.
+    const [r, g, b] = at(frame, 0.5, 0.5);
+    expect(r).toBeCloseTo(linearToSrgb(0.3026), 2);
+    expect(g).toBeCloseTo(linearToSrgb(0.3718), 2);
+    expect(b).toBeCloseTo(linearToSrgb(0.3257), 2);
+    // Without vertexColors the attribute is ignored.
+    expect(at(frameOf(rgbTriangle(colorAttribute, "{ color: 'white' }"))!, 0.5, 0.5)).toEqual([1, 1, 1]);
+  });
+
+  it("refuses vertexColors without a color attribute (the GPU's value is undefined there)", () => {
+    expect(frameOf(rgbTriangle(""))).toBeNull();
+  });
+
+  it("draws whole triangles only: a vertex left over at the end of the buffer adds nothing", () => {
+    // Four vertices without an index: the triangle (0, 1, 2) and a leftover.
+    const quad =
+      "const geo = new THREE.BufferGeometry();\n" +
+      "geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-2, -2, 0, 2, -2, 0, 2, 2, 0, -2, 2, 0]), 3));\n" +
+      "scene.add(new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 'white' })));\n";
+    const frame = frameOf(quad)!;
+    expect(at(frame, 0.5, 0.34)).toEqual([1, 1, 1]); // below the diagonal: drawn
+    expect(at(frame, 0.5, 0.66)).toEqual(CLEAR.map((c) => Math.round(c * 255) / 255)); // above it: empty
   });
 
   it("multiplies each instance's setColorAt colour into the material colour", () => {

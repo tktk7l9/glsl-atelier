@@ -475,6 +475,41 @@ const rimOf = (n: V3): number => Math.pow(1 - Math.max(n[2], 0), 3);
 const toon = (x: number, y: number, level: (diff: number) => number): RGB =>
   litSphere(x, y, (_n, diff) => rgb(ORANGE.map((c) => c * (0.15 + 0.85 * level(diff)))));
 
+/** The fractal lessons: z ← step(z, c) until |z|² > 4, at most `steps` times;
+ *  the number of steps that stayed inside, or null if it never escaped. */
+type ComplexStep = (zx: number, zy: number, cx: number, cy: number) => [number, number];
+const SQUARE_PLUS_C: ComplexStep = (zx, zy, cx, cy) => [zx * zx - zy * zy + cx, 2 * zx * zy + cy];
+function escapeCount(cx: number, cy: number, zx: number, zy: number, next: ComplexStep = SQUARE_PLUS_C, steps = 64): number | null {
+  for (let i = 0; i < steps; i++) {
+    [zx, zy] = next(zx, zy, cx, cy);
+    if (zx * zx + zy * zy > 4) return i;
+  }
+  return null;
+}
+/** The Mandelbrot lessons' c for a pixel: p * 1.5 + (-0.7, 0). */
+function mandelbrotC(x: number, y: number): [number, number] {
+  const [px, py] = centred(x, y);
+  return [px * 1.5 - 0.7, py * 1.5];
+}
+/** The first lesson: never escaping (inside) black, escaping white. */
+function mandelbrot(x: number, y: number, next: ComplexStep = SQUARE_PLUS_C, steps = 64, fromC = false): RGB {
+  const [cx, cy] = mandelbrotC(x, y);
+  return grey(escapeCount(cx, cy, fromC ? cx : 0, fromC ? cy : 0, next, steps) === null ? 0 : 1);
+}
+const mandelbrotSteps = (x: number, y: number): number | null => escapeCount(...mandelbrotC(x, y), 0, 0);
+/** The Julia lesson: c fixed, z from the pixel (scaled by `scale`). */
+const JULIA_C: readonly [number, number] = [-0.12, 0.75];
+function juliaSteps(x: number, y: number, c: readonly [number, number] = JULIA_C, scale = 1.5): number | null {
+  const [px, py] = centred(x, y);
+  return escapeCount(c[0], c[1], px * scale, py * scale);
+}
+/** The glsl-color track's cosine palette. */
+const cosinePalette = (t: number): RGB => rgb([0, 0.33, 0.67].map((d) => 0.5 + 0.5 * Math.cos(6.2831 * (t + d))));
+/** Escape-time colour: inside (null) black, else palette(n / 64). */
+const escapeColour = (n: number | null): RGB => (n === null ? [0, 0, 0] : cosinePalette(n / 64));
+/** Counting before the escape test: one more, and 64 (black) for the last step. */
+const countedFirst = (n: number | null): number | null => (n === null || n + 1 >= 64 ? null : n + 1);
+
 /** JS ports of (starter, solution) for the shader lessons added in 2026-10. */
 const SHADER_MODELS: Record<string, { starter: Shade; solution: Shade }> = {
   "glsl-repeat-dots": {
@@ -700,6 +735,19 @@ const SHADER_MODELS: Record<string, { starter: Shade; solution: Shade }> = {
     starter: (x, y) => toon(x, y, (d) => d),
     solution: (x, y) => toon(x, y, (d) => Math.floor(d * 3) / 3),
   },
+  // 2026-10, eighth batch.
+  "glsl-mandelbrot": {
+    starter: () => grey(0),
+    solution: (x, y) => mandelbrot(x, y),
+  },
+  "glsl-escape-time": {
+    starter: () => grey(0),
+    solution: (x, y) => escapeColour(mandelbrotSteps(x, y)),
+  },
+  "glsl-julia": {
+    starter: (x, y) => escapeColour(mandelbrotSteps(x, y)),
+    solution: (x, y) => escapeColour(juliaSteps(x, y)),
+  },
 };
 
 describe("shader lessons modelled on the grader's sample grid", () => {
@@ -870,6 +918,30 @@ const SHADER_NEAR_MISSES: Record<string, ReadonlyArray<readonly [string, Shade]>
       (x, y) => litSphere(x, y, (_n, diff) => rgb(ORANGE.map((c) => Math.floor(c * (0.15 + 0.85 * diff) * 3) / 3))),
     ],
   ],
+  // 2026-10, eighth batch.
+  "glsl-mandelbrot": [
+    ["z * z (component-wise, not the complex square)", (x, y) => mandelbrot(x, y, (zx, zy, cx, cy) => [zx * zx + cx, zy * zy + cy])],
+    ["x² + y² instead of x² − y²", (x, y) => mandelbrot(x, y, (zx, zy, cx, cy) => [zx * zx + zy * zy + cx, 2 * zx * zy + cy])],
+    ["the conjugate (−2xy, the tricorn)", (x, y) => mandelbrot(x, y, (zx, zy, cx, cy) => [zx * zx - zy * zy + cx, -2 * zx * zy + cy])],
+    ["c never added", (x, y) => mandelbrot(x, y, (zx, zy) => [zx * zx - zy * zy, 2 * zx * zy])],
+    ["8 steps instead of 64", (x, y) => mandelbrot(x, y, SQUARE_PLUS_C, 8)],
+  ],
+  "glsl-escape-time": [
+    ["n never counted (every pixel as n = 0)", () => cosinePalette(0)],
+    ["the inside coloured too", (x, y) => cosinePalette((mandelbrotSteps(x, y) ?? 64) / 64)],
+    [
+      "palette(n) without dividing by 64",
+      (x, y) => {
+        const n = mandelbrotSteps(x, y);
+        return n === null ? [0, 0, 0] : cosinePalette(n);
+      },
+    ],
+  ],
+  "glsl-julia": [
+    ["c conjugated (−0.12, −0.75): the rabbit upside down", (x, y) => escapeColour(juliaSteps(x, y, [-0.12, -0.75]))],
+    ["z from 0 with c fixed", () => escapeColour(escapeCount(JULIA_C[0], JULIA_C[1], 0, 0))],
+    ["z = p (without * 1.5)", (x, y) => escapeColour(juliaSteps(x, y, JULIA_C, 1))],
+  ],
 };
 
 describe("shader near misses are rejected", () => {
@@ -931,6 +1003,20 @@ const SHADER_VARIANTS: Record<string, ReadonlyArray<readonly [string, Shade]>> =
   ],
   "glsl-rim": [["(1 - dot(n, V)) multiplied three times", (x, y) => rimLit(x, y, (n) => (1 - Math.max(n[2], 0)) ** 3)]],
   "glsl-toon": [["step thresholds at 1/3 and 2/3", (x, y) => toon(x, y, (d) => step(1 / 3, d) / 3 + step(2 / 3, d) / 3 + step(1, d) / 3)]],
+  // 2026-10, eighth batch.
+  "glsl-mandelbrot": [
+    ["length(z) > 2.0", (x, y) => mandelbrot(x, y)],
+    ["128 steps", (x, y) => mandelbrot(x, y, SQUARE_PLUS_C, 128)],
+    ["z starting at c", (x, y) => mandelbrot(x, y, SQUARE_PLUS_C, 64, true)],
+  ],
+  "glsl-escape-time": [
+    ["n counted before the escape test", (x, y) => escapeColour(countedFirst(mandelbrotSteps(x, y)))],
+    ["n = float(i) at the break", (x, y) => escapeColour(mandelbrotSteps(x, y))],
+  ],
+  "glsl-julia": [
+    ["n counted before the escape test", (x, y) => escapeColour(countedFirst(juliaSteps(x, y)))],
+    ["c declared const", (x, y) => escapeColour(juliaSteps(x, y))],
+  ],
 };
 
 describe("shader variants are accepted", () => {
@@ -1375,6 +1461,9 @@ const FLAT_LESSONS = [
   "three-look-at",
   "three-instanced",
   "three-instance-color",
+  "three-lerp",
+  "three-quaternion",
+  "three-spherical",
   "three-camera-back",
   "three-camera-angle",
   "three-camera-fov",
@@ -1449,6 +1538,10 @@ const ATLAS_REPEAT = "tex.repeat.set(0.5, 0.5);  // 画像の縦横半分だけ�
 const ATLAS_OFFSET = "tex.offset.set(0.5, 0.5);  // 右上のコマから\n";
 const ROTATION_CENTER = "tex.center.set(0.5, 0.5);    // 回転の中心を画像のまん中に\n";
 const ROTATION_ANGLE = "tex.rotation = Math.PI / 2;  // 反時計回りに 90°（ラジアン）\n";
+/** Lines of the eighth-batch scene solutions that the edits below change. */
+const LERP_LINE = "ball.position.lerpVectors(a, b, 0.25);";
+const QUATERNION_LINE = "arms.quaternion.setFromAxisAngle(axis, Math.PI * 2 / 3);";
+const SPHERICAL_LINE = "marker.position.setFromSphericalCoords(2, Math.PI / 3, Math.PI / 6);";
 
 /** Plausible wrong answers to the 2026-10 (third to sixth batch) unlit scene
  *  lessons, as edits of the solution; each must be rejected at both preview
@@ -1559,6 +1652,36 @@ const SCENE_NEAR_MISSES: Record<string, ReadonlyArray<readonly [string, (solutio
     ["90 (radians, not degrees)", (s) => s.replace("tex.rotation = Math.PI / 2;", "tex.rotation = 90;")],
     ["clockwise (-Math.PI / 2)", (s) => s.replace("tex.rotation = Math.PI / 2;", "tex.rotation = -Math.PI / 2;")],
   ],
+  // 2026-10, eighth batch.
+  "three-lerp": [
+    ["from b towards a", (s) => s.replace(LERP_LINE, "ball.position.lerpVectors(b, a, 0.25);")],
+    ["lerp from where the ball is (the origin)", (s) => s.replace(LERP_LINE, "ball.position.lerp(b, 0.25);")],
+    ["halfway (t = 0.5)", (s) => s.replace(LERP_LINE, "ball.position.lerpVectors(a, b, 0.5);")],
+    ["t as a percentage (25)", (s) => s.replace(LERP_LINE, "ball.position.lerpVectors(a, b, 25);")],
+  ],
+  "three-quaternion": [
+    ["the axis not normalized", (s) => s.replace("new THREE.Vector3(1, 1, 1).normalize();", "new THREE.Vector3(1, 1, 1);")],
+    ["120 (degrees, not radians)", (s) => s.replace(QUATERNION_LINE, "arms.quaternion.setFromAxisAngle(axis, 120);")],
+    ["the other way round (−120°)", (s) => s.replace(QUATERNION_LINE, "arms.quaternion.setFromAxisAngle(axis, -Math.PI * 2 / 3);")],
+    [
+      "120° about x, y and z in turn (Euler angles)",
+      (s) => s.replace(QUATERNION_LINE, "arms.rotation.set(Math.PI * 2 / 3, Math.PI * 2 / 3, Math.PI * 2 / 3); // Quaternion"),
+    ],
+  ],
+  "three-spherical": [
+    ["the latitude (30°) as phi", (s) => s.replace(SPHERICAL_LINE, "marker.position.setFromSphericalCoords(2, Math.PI / 6, Math.PI / 6);")],
+    ["phi and theta swapped", (s) => s.replace(SPHERICAL_LINE, "marker.position.setFromSphericalCoords(2, Math.PI / 6, Math.PI / 3);")],
+    ["degrees (60, 30)", (s) => s.replace(SPHERICAL_LINE, "marker.position.setFromSphericalCoords(2, 60, 30);")],
+    ["radius 1 (inside the globe)", (s) => s.replace(SPHERICAL_LINE, "marker.position.setFromSphericalCoords(1, Math.PI / 3, Math.PI / 6);")],
+    [
+      "theta from +X (x with cos, z with sin)",
+      (s) =>
+        s.replace(
+          SPHERICAL_LINE,
+          "marker.position.set(2 * Math.sin(Math.PI / 3) * Math.cos(Math.PI / 6), 2 * Math.cos(Math.PI / 3), 2 * Math.sin(Math.PI / 3) * Math.sin(Math.PI / 6));",
+        ),
+    ],
+  ],
 };
 
 /** Other correct ways to write the fifth- and sixth-batch unlit scene lessons;
@@ -1621,6 +1744,35 @@ const SCENE_VARIANTS: Record<string, ReadonlyArray<readonly [string, (solution: 
   "three-texture-rotation": [
     ["Math.PI * 0.5", (s) => s.replace("Math.PI / 2;", "Math.PI * 0.5;")],
     ["the rotation set before the center", (s) => s.replace(ROTATION_CENTER + ROTATION_ANGLE, ROTATION_ANGLE + ROTATION_CENTER)],
+  ],
+  // 2026-10, eighth batch.
+  "three-lerp": [
+    ["copy(a), then lerp(b, 0.25)", (s) => s.replace(LERP_LINE, "ball.position.copy(a).lerp(b, 0.25);")],
+    ["a.clone().lerp(b, 0.25), copied in", (s) => s.replace(LERP_LINE, "ball.position.copy(a.clone().lerp(b, 0.25));")],
+  ],
+  "three-quaternion": [
+    ["setRotationFromAxisAngle", (s) => s.replace(QUATERNION_LINE, "arms.setRotationFromAxisAngle(axis, Math.PI * 2 / 3);")],
+    ["rotateOnAxis", (s) => s.replace(QUATERNION_LINE, "arms.rotateOnAxis(axis, Math.PI * 2 / 3);")],
+    [
+      "a Quaternion copied in, the angle from degrees",
+      (s) => s.replace(QUATERNION_LINE, "const q = new THREE.Quaternion().setFromAxisAngle(axis, (120 * Math.PI) / 180);\narms.quaternion.copy(q);"),
+    ],
+  ],
+  "three-spherical": [
+    ["a Spherical", (s) => s.replace(SPHERICAL_LINE, "marker.position.setFromSpherical(new THREE.Spherical(2, Math.PI / 3, Math.PI / 6));")],
+    [
+      "angles through degToRad",
+      (s) => s.replace(SPHERICAL_LINE, "marker.position.setFromSphericalCoords(2, THREE.MathUtils.degToRad(90 - 30), THREE.MathUtils.degToRad(30));"),
+    ],
+    [
+      "sin and cos written out",
+      (s) =>
+        s.replace(
+          SPHERICAL_LINE,
+          "marker.position.set(2 * Math.sin(Math.PI / 3) * Math.sin(Math.PI / 6), 2 * Math.cos(Math.PI / 3), 2 * Math.sin(Math.PI / 3) * Math.cos(Math.PI / 6));",
+        ),
+    ],
+    ["the marker a child of the globe", (s) => s.replace("scene.add(marker);", "globe.add(marker);")],
   ],
 };
 

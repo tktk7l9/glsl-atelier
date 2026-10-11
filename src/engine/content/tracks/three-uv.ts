@@ -34,18 +34,30 @@ const UV_SQUARE = (uvs: string, wire: string, material: string, note = ""): stri
   `const square = new THREE.Mesh(geo, new THREE.MeshBasicMaterial(${material}));\n` +
   "scene.add(square);\n";
 
-/** A 4×4 sprite sheet: four 2×2 cells, each a bottom and a top row colour
- *  (bottom left: red / green, bottom right: white / black, top left: blue /
- *  cyan, top right: magenta / yellow). */
+/** An 8×8 sprite sheet: four 4×4 cells, each a 2×2 picture (a bottom and a
+ *  top row colour) inside a one-texel black margin, the usual sprite-sheet
+ *  padding (black reads as the near-black background). Drawn antialiased, a
+ *  pixel on the board's edge is shaded a little outside it, where the uv
+ *  steps over into the next cell: the margin keeps that from showing as a
+ *  line of the neighbour's colour. Cells: bottom left red / green, bottom
+ *  right white / orange, top left blue / cyan, top right magenta / yellow. */
 const SHEET_TEXTURE =
-  "// 4×4 ピクセルの画像に、2×2 ピクセルのコマが 4つ（下の段から 1行ずつ）\n" +
-  "const data = new Uint8Array([\n" +
-  "  255, 0, 0, 255,   255, 0, 0, 255,     255, 255, 255, 255, 255, 255, 255, 255,  // 赤 赤 白 白\n" +
-  "  0, 255, 0, 255,   0, 255, 0, 255,     0, 0, 0, 255,       0, 0, 0, 255,        // 緑 緑 黒 黒\n" +
-  "  0, 0, 255, 255,   0, 0, 255, 255,     255, 0, 255, 255,   255, 0, 255, 255,    // 青 青 赤紫 赤紫\n" +
-  "  0, 255, 255, 255, 0, 255, 255, 255,   255, 255, 0, 255,   255, 255, 0, 255,    // 水 水 黄 黄\n" +
-  "]);\n" +
-  "const tex = new THREE.DataTexture(data, 4, 4);\n" +
+  "// 8×8 ピクセルの画像に、4×4 ピクセルのコマが 4つ。どのコマも、内側の 2×2 に絵があり、\n" +
+  "// まわり 1ピクセルは黒い余白（_）になっている（下の段から 1行ずつ）\n" +
+  "const _ = [0, 0, 0], R = [255, 0, 0], G = [0, 255, 0], W = [255, 255, 255], O = [255, 128, 0];\n" +
+  "const B = [0, 0, 255], C = [0, 255, 255], M = [255, 0, 255], Y = [255, 255, 0];\n" +
+  "const rows = [\n" +
+  "  [_, _, _, _, _, _, _, _],\n" +
+  "  [_, R, R, _, _, W, W, _],  // 左下のコマ: 赤／緑、右下のコマ: 白／橙\n" +
+  "  [_, G, G, _, _, O, O, _],\n" +
+  "  [_, _, _, _, _, _, _, _],\n" +
+  "  [_, _, _, _, _, _, _, _],\n" +
+  "  [_, B, B, _, _, M, M, _],  // 左上のコマ: 青／水色、右上のコマ: 赤紫／黄\n" +
+  "  [_, C, C, _, _, Y, Y, _],\n" +
+  "  [_, _, _, _, _, _, _, _],\n" +
+  "];\n" +
+  "const data = new Uint8Array(rows.flat().flatMap((c) => [...c, 255]));\n" +
+  "const tex = new THREE.DataTexture(data, 8, 8);\n" +
   "tex.needsUpdate = true;\n";
 
 const TEXTURED_PLANE =
@@ -135,7 +147,8 @@ export const track: Track = {
         "<p>小さな絵を何枚も 1枚の画像に並べたものを<b>スプライトシート</b>（テクスチャアトラス）と呼びます。画像を 1枚にまとめると、読み込みも切り替えも速くなるので、" +
         "ゲームのキャラクターのコマやアイコンでよく使われます。そこから 1コマだけを貼るには、テクスチャの <code>repeat</code> で<b>画像の何分の1を貼るか</b>、" +
         "<code>offset</code> で<b>どこから貼るか</b>を決めます。2×2 に並んだコマなら、<code>repeat.set(0.5, 0.5)</code> で縦横半分、<code>offset.set(0.5, 0.5)</code> で" +
-        "右上のコマです（offset も uv と同じく、左下が 0、右上が 1）。</p>",
+        "右上のコマです（offset も uv と同じく、左下が 0、右上が 1）。スプライトシートでは、コマのまわりに余白を空けておくのが定番です。" +
+        "ふちのピクセルを描くとき、となりのコマの色がほんの少しにじむのを防ぐためで、この画像も、どのコマもまわり 1ピクセルが黒い余白です。</p>",
       challenge: {
         starterCode:
           SHEET_TEXTURE + "\n// ここで、右上のコマ（下が赤紫・上が黄）だけが貼られるように、貼る範囲と位置を変えよう\n\n" + TEXTURED_PLANE,
@@ -144,12 +157,15 @@ export const track: Track = {
           { kind: "noError" },
           { kind: "sourceMatches", pattern: "offset", message: "tex.offset で、貼り始める位置を決めましょう" },
           { kind: "materialOf", material: "MeshBasicMaterial" },
-          // Up the centre line: the cell's bottom row (magenta) on the lower
-          // half of the board, its top row (yellow) on the upper half.
+          // Up the centre line: the cell's bottom row (magenta) just below the
+          // middle of the board, its top row (yellow) just above; the margin
+          // round the cell is further out. Repeat alone shows the bottom-left
+          // cell, offset alone the cell's own margin here, offset (0, 0.5) the
+          // top-left cell.
           {
             kind: "pixelApprox",
             x: 0.5,
-            y: 0.22,
+            y: 0.41,
             rgb: MAGENTA,
             tol: 0.15,
             message: "右上のコマが貼られていません。repeat を (0.5, 0.5) にして画像の 4分の1 を貼り、offset を (0.5, 0.5) にして右上へ移しましょう",
@@ -157,12 +173,11 @@ export const track: Track = {
           {
             kind: "pixelApprox",
             x: 0.5,
-            y: 0.41,
-            rgb: MAGENTA,
+            y: 0.59,
+            rgb: YELLOW,
             tol: 0.15,
-            message: "コマの大きさが違います（となりのコマや端の色まで入っています）。repeat も (0.5, 0.5) にしましょう",
+            message: "コマの上半分（黄）が貼られていません。repeat も offset も (0.5, 0.5) にしましょう",
           },
-          { kind: "pixelApprox", x: 0.5, y: 0.72, rgb: YELLOW, tol: 0.15 },
         ],
         hints: ["tex.repeat.set(0.5, 0.5);  // 縦横とも半分だけ貼る", "tex.offset.set(0.5, 0.5);  // 右上のコマから"],
         solution:

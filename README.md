@@ -31,10 +31,11 @@
 
 ```
 src/
-  main.ts app.ts styles.css        # シェル・ルーティング・レッスン実行・テーマ
+  main.ts app.ts styles.css sw.js  # シェル・ルーティング・レッスン実行・テーマ・オフライン
   engine/                          # 純ロジック（100% カバレッジ）
     validate/ {snapshot,color,sample,primitives,run,describe}.ts
-    content/  {types,index,glsl,three}.ts
+    content/  {types,index}.ts       # index = カタログ（トラック名・レッスン名）とトラックごとの import()
+    content/tracks/*.ts            # トラックごとのレッスン本文（必要になったときに読み込む）
     editor/   tokenize.ts          # GLSL / JS シンタックスハイライト
     progress.ts
   sandbox/                         # 実行ランタイム（表示層・対象外）
@@ -47,6 +48,8 @@ src/
   ui/ {dom,editor,catalogue}.ts
   viz/ background.ts               # 星雲＋星＋bloom の宇宙背景（遅延読み込み）
 ```
+
+初回ロードの JS はシェルとカタログだけです（約 25 kB・gzip 約 10 kB）。各トラックの解説・お題・解答・採点設定はトラックごとのチャンクに分かれ、開いたレッスンのトラックだけを、レッスン実行部（`app.ts`）と並行して読み込みます。レッスンへのリンクから開いたときは、シェルを組み立てる前に読み込みを始めます。サービスワーカー（`src/sw.js` をひな形にビルドが生成）は全トラックのチャンクを先読みするので、オンラインで開いたことのないレッスンもオフラインで開けます。トラックのモジュールが初回ロードに混ざるとビルドが失敗します。
 
 ## クイックスタート
 

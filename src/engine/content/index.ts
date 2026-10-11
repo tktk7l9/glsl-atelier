@@ -199,6 +199,18 @@ export const TRACKS: readonly TrackMeta[] = [
     ],
   },
   {
+    id: "glsl-lighting",
+    domain: "glsl",
+    title: "光の質感",
+    summary: "ランバートの拡散光に、つやのハイライト（Blinn-Phong）、ふちの光（リムライト）、段々の陰影（トゥーン）を足して、質感を描き分ける。",
+    icon: "💎",
+    lessons: [
+      { id: "glsl-specular", title: "つやを出す: Blinn-Phong のハイライト" },
+      { id: "glsl-rim", title: "ふちを光らせる: リムライト" },
+      { id: "glsl-toon", title: "アニメ調の陰影: トゥーンシェーディング" },
+    ],
+  },
+  {
     id: "three-basics",
     domain: "three",
     title: "シーンの基本",
@@ -318,6 +330,18 @@ export const TRACKS: readonly TrackMeta[] = [
     ],
   },
   {
+    id: "three-uv",
+    domain: "three",
+    title: "テクスチャ座標（UV）",
+    summary: "頂点ごとの uv で画像の貼り方を決め、repeat と offset で画像の一部（スプライトシートの 1コマ）を取り出し、rotation と center で画像を回す。",
+    icon: "🗺️",
+    lessons: [
+      { id: "three-uv", title: "画像の貼り方を決める: uv 属性" },
+      { id: "three-texture-atlas", title: "画像の一部を貼る: repeat と offset" },
+      { id: "three-texture-rotation", title: "画像を回す: rotation と center" },
+    ],
+  },
+  {
     id: "three-curves",
     domain: "three",
     title: "線から形をつくる",
@@ -405,6 +429,7 @@ const LOADERS: Readonly<Record<string, () => Promise<{ readonly track: Track }>>
   "glsl-filter": () => import("./tracks/glsl-filter.js"),
   "glsl-convolution": () => import("./tracks/glsl-convolution.js"),
   "glsl-advanced": () => import("./tracks/glsl-advanced.js"),
+  "glsl-lighting": () => import("./tracks/glsl-lighting.js"),
   "three-basics": () => import("./tracks/three-basics.js"),
   "three-geometry": () => import("./tracks/three-geometry.js"),
   "three-material": () => import("./tracks/three-material.js"),
@@ -414,6 +439,7 @@ const LOADERS: Readonly<Record<string, () => Promise<{ readonly track: Track }>>
   "three-animation": () => import("./tracks/three-animation.js"),
   "three-data": () => import("./tracks/three-data.js"),
   "three-vertices": () => import("./tracks/three-vertices.js"),
+  "three-uv": () => import("./tracks/three-uv.js"),
   "three-curves": () => import("./tracks/three-curves.js"),
   "three-lines-sprites": () => import("./tracks/three-lines-sprites.js"),
   "three-atmosphere": () => import("./tracks/three-atmosphere.js"),

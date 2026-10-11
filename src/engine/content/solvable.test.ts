@@ -448,6 +448,33 @@ function edges(x: number, y: number, combine: (gx: number, gy: number) => number
   return grey(threshold(combine(gx, gy)));
 }
 
+/** The lighting-model lessons: a sphere of radius 0.75 seen head-on, the light
+ *  from the upper left and the viewer in front; `shade` colours a point of it
+ *  from its normal and the Lambert term. */
+const LIGHT: V3 = v3norm([-0.6, 0.6, 0.5]);
+const VIEW: V3 = [0, 0, 1];
+const HALF: V3 = v3norm(v3add(LIGHT, VIEW));
+const ORANGE: RGB = [1, 0.55, 0.25];
+function litSphere(x: number, y: number, shade: (n: V3, diff: number) => RGB): RGB {
+  const [px, py] = centred(x, y);
+  const d = length(px, py);
+  if (d >= 0.75) return [0, 0, 0];
+  const n = v3norm([px, py, Math.sqrt(0.75 * 0.75 - d * d)]);
+  return shade(n, Math.max(v3dot(n, LIGHT), 0));
+}
+const matteOrange = (diff: number): RGB => rgb(ORANGE.map((c) => c * (0.1 + 0.9 * diff)));
+/** The matte sphere plus a white specular term `spec(n)`. */
+const specular = (x: number, y: number, spec: (n: V3) => number): RGB =>
+  litSphere(x, y, (n, diff) => rgb(matteOrange(diff).map((c) => c + spec(n))));
+const blinn = (n: V3, shininess: number): number => Math.pow(Math.max(v3dot(n, HALF), 0), shininess);
+/** The matte sphere plus a blue (or `tint`) rim light of strength `rim(n)`. */
+const rimLit = (x: number, y: number, rim: (n: V3) => number, tint: RGB = [0.3, 0.6, 1]): RGB =>
+  litSphere(x, y, (n, diff) => rgb(matteOrange(diff).map((c, i) => c + tint[i] * rim(n))));
+const rimOf = (n: V3): number => Math.pow(1 - Math.max(n[2], 0), 3);
+/** The toon lesson: brightness `level(diff)` instead of the smooth Lambert term. */
+const toon = (x: number, y: number, level: (diff: number) => number): RGB =>
+  litSphere(x, y, (_n, diff) => rgb(ORANGE.map((c) => c * (0.15 + 0.85 * level(diff)))));
+
 /** JS ports of (starter, solution) for the shader lessons added in 2026-10. */
 const SHADER_MODELS: Record<string, { starter: Shade; solution: Shade }> = {
   "glsl-repeat-dots": {
@@ -660,6 +687,19 @@ const SHADER_MODELS: Record<string, { starter: Shade; solution: Shade }> = {
     starter: (x, y) => edges(x, y, (gx) => Math.abs(gx)),
     solution: (x, y) => edges(x, y, Math.hypot),
   },
+  // 2026-10, seventh batch.
+  "glsl-specular": {
+    starter: (x, y) => specular(x, y, () => 0),
+    solution: (x, y) => specular(x, y, (n) => blinn(n, 32)),
+  },
+  "glsl-rim": {
+    starter: (x, y) => rimLit(x, y, () => 0),
+    solution: (x, y) => rimLit(x, y, rimOf),
+  },
+  "glsl-toon": {
+    starter: (x, y) => toon(x, y, (d) => d),
+    solution: (x, y) => toon(x, y, (d) => Math.floor(d * 3) / 3),
+  },
 };
 
 describe("shader lessons modelled on the grader's sample grid", () => {
@@ -804,6 +844,32 @@ const SHADER_NEAR_MISSES: Record<string, ReadonlyArray<readonly [string, Shade]>
     ["the step turned round (black lines on white)", (x, y) => edges(x, y, Math.hypot, (e) => step(e, 0.05))],
     ["the strength without step (dim grey lines)", (x, y) => edges(x, y, Math.hypot, (e) => e)],
   ],
+  // 2026-10, seventh batch.
+  "glsl-specular": [
+    ["dot(n, L)^32 (the highlight where n points at the light)", (x, y) => specular(x, y, (n) => Math.pow(Math.max(v3dot(n, LIGHT), 0), 32))],
+    ["dot(n, V)^32 (the highlight in the middle)", (x, y) => specular(x, y, (n) => Math.pow(Math.max(n[2], 0), 32))],
+    ["h = normalize(L - V)", (x, y) => specular(x, y, (n) => Math.pow(Math.max(v3dot(n, v3norm(v3add(LIGHT, v3scale(VIEW, -1)))), 0), 32))],
+    [
+      "an orange highlight (spec times the base colour)",
+      (x, y) => litSphere(x, y, (n, diff) => rgb(matteOrange(diff).map((c, i) => c + ORANGE[i] * blinn(n, 32)))),
+    ],
+  ],
+  "glsl-rim": [
+    ["dot(n, V)^3 (the middle glows)", (x, y) => rimLit(x, y, (n) => Math.pow(Math.max(n[2], 0), 3))],
+    ["1 - dot(n, L) (the light's direction instead of the eye's)", (x, y) => rimLit(x, y, (n) => Math.pow(1 - Math.max(v3dot(n, LIGHT), 0), 3))],
+    ["without pow (1 - dot(n, V))", (x, y) => rimLit(x, y, (n) => 1 - Math.max(n[2], 0))],
+    ["a white rim", (x, y) => rimLit(x, y, rimOf, [1, 1, 1])],
+  ],
+  "glsl-toon": [
+    ["round instead of floor", (x, y) => toon(x, y, (d) => Math.round(d * 3) / 3)],
+    ["ceil instead of floor", (x, y) => toon(x, y, (d) => Math.ceil(d * 3) / 3)],
+    ["2 levels", (x, y) => toon(x, y, (d) => Math.floor(d * 2) / 2)],
+    ["4 levels", (x, y) => toon(x, y, (d) => Math.floor(d * 4) / 4)],
+    [
+      "the colour rounded after lighting",
+      (x, y) => litSphere(x, y, (_n, diff) => rgb(ORANGE.map((c) => Math.floor(c * (0.15 + 0.85 * diff) * 3) / 3))),
+    ],
+  ],
 };
 
 describe("shader near misses are rejected", () => {
@@ -850,6 +916,21 @@ const SHADER_VARIANTS: Record<string, ReadonlyArray<readonly [string, Shade]>> =
     ["abs(gx) + abs(gy)", (x, y) => edges(x, y, (gx, gy) => Math.abs(gx) + Math.abs(gy))],
     ["max(abs(gx), abs(gy))", (x, y) => edges(x, y, (gx, gy) => Math.max(Math.abs(gx), Math.abs(gy)))],
   ],
+  // 2026-10, seventh batch.
+  "glsl-specular": [
+    ["shininess 16", (x, y) => specular(x, y, (n) => blinn(n, 16))],
+    ["shininess 64", (x, y) => specular(x, y, (n) => blinn(n, 64))],
+    [
+      "Phong: reflect(-L, n) · V, shininess 32",
+      (x, y) =>
+        specular(x, y, (n) => {
+          const r = v3add(v3scale(n, 2 * v3dot(n, LIGHT)), v3scale(LIGHT, -1));
+          return Math.pow(Math.max(v3dot(r, VIEW), 0), 32);
+        }),
+    ],
+  ],
+  "glsl-rim": [["(1 - dot(n, V)) multiplied three times", (x, y) => rimLit(x, y, (n) => (1 - Math.max(n[2], 0)) ** 3)]],
+  "glsl-toon": [["step thresholds at 1/3 and 2/3", (x, y) => toon(x, y, (d) => step(1 / 3, d) / 3 + step(2 / 3, d) / 3 + step(1, d) / 3)]],
 };
 
 describe("shader variants are accepted", () => {
@@ -1307,6 +1388,9 @@ const FLAT_LESSONS = [
   "three-triangles",
   "three-index",
   "three-vertex-colors",
+  "three-uv",
+  "three-texture-atlas",
+  "three-texture-rotation",
   "three-lathe",
   "three-extrude",
   "three-tube",
@@ -1358,6 +1442,13 @@ describe("unlit Three.js lessons judged on a ray-cast frame, pixels included", (
 const SECOND_TRIANGLE_TAIL = "   1.5,  1.5, 0,  // 右上\n  -1.5,  1.5, 0,  // 左上（左下 → 右上 → 左上 で反時計回り）\n";
 /** The vertex-colour lesson's colours, as written in its solution. */
 const RGB_COLOURS = "  1, 0, 0,  // 上: 赤\n  0, 1, 0,  // 左下: 緑\n  0, 0, 1,  // 右下: 青\n";
+/** Lines of the UV lessons' solutions that the edits below change. */
+const UV_BOTTOM = "  0, 0,  // 0: 左下 → 画像の左下\n  1, 0,  // 1: 右下 → 画像の右下\n";
+const UV_TOP = "  1, 1,  // 2: 右上 → 画像の右上\n  0, 1,  // 3: 左上 → 画像の左上\n";
+const ATLAS_REPEAT = "tex.repeat.set(0.5, 0.5);  // 画像の縦横半分だけを貼る\n";
+const ATLAS_OFFSET = "tex.offset.set(0.5, 0.5);  // 右上のコマから\n";
+const ROTATION_CENTER = "tex.center.set(0.5, 0.5);    // 回転の中心を画像のまん中に\n";
+const ROTATION_ANGLE = "tex.rotation = Math.PI / 2;  // 反時計回りに 90°（ラジアン）\n";
 
 /** Plausible wrong answers to the 2026-10 (third to sixth batch) unlit scene
  *  lessons, as edits of the solution; each must be rejected at both preview
@@ -1452,6 +1543,22 @@ const SCENE_NEAR_MISSES: Record<string, ReadonlyArray<readonly [string, (solutio
     ],
     ["the colours written as 0–255", (s) => s.replace(RGB_COLOURS, "  255, 0, 0,\n  0, 255, 0,\n  0, 0, 255,\n")],
   ],
+  // 2026-10, seventh batch.
+  "three-uv": [
+    ["the top corners' v left at 0 (the bottom row stretched)", (s) => s.replace(UV_TOP, "  1, 0,  // 2: 右上\n  0, 0,  // 3: 左上\n")],
+    ["upside down (v = 1 at the bottom)", (s) => s.replace(UV_BOTTOM + UV_TOP, "  0, 1,\n  1, 1,\n  1, 0,\n  0, 0,\n")],
+    ["the uv passed on but no map (a white board)", (s) => s.replace("{ map: tex }", "{ color: 'white' }")],
+  ],
+  "three-texture-atlas": [
+    ["repeat only (the bottom-left cell)", (s) => s.replace(ATLAS_OFFSET, "// offset\n")],
+    ["offset only (the cell and what lies past it)", (s) => s.replace(ATLAS_REPEAT, "")],
+    ["the top-left cell (offset 0, 0.5)", (s) => s.replace("tex.offset.set(0.5, 0.5)", "tex.offset.set(0, 0.5)")],
+  ],
+  "three-texture-rotation": [
+    ["no center (turned about the corner)", (s) => s.replace(ROTATION_CENTER, "")],
+    ["90 (radians, not degrees)", (s) => s.replace("tex.rotation = Math.PI / 2;", "tex.rotation = 90;")],
+    ["clockwise (-Math.PI / 2)", (s) => s.replace("tex.rotation = Math.PI / 2;", "tex.rotation = -Math.PI / 2;")],
+  ],
 };
 
 /** Other correct ways to write the fifth- and sixth-batch unlit scene lessons;
@@ -1504,6 +1611,16 @@ const SCENE_VARIANTS: Record<string, ReadonlyArray<readonly [string, (solution: 
           "const colors = new Float32Array(9);\n['red', 'lime', 'blue'].forEach((name, i) => new THREE.Color(name).toArray(colors, i * 3));\n",
         ),
     ],
+  ],
+  // 2026-10, seventh batch.
+  "three-uv": [["a Float32BufferAttribute", (s) => s.replace("new THREE.BufferAttribute(uvs, 2)", "new THREE.Float32BufferAttribute(uvs, 2)")]],
+  "three-texture-atlas": [
+    ["repeat.x and repeat.y one by one", (s) => s.replace("tex.repeat.set(0.5, 0.5);", "tex.repeat.x = 0.5;\ntex.repeat.y = 0.5;")],
+    ["the offset set before the repeat", (s) => s.replace(ATLAS_REPEAT + ATLAS_OFFSET, ATLAS_OFFSET + ATLAS_REPEAT)],
+  ],
+  "three-texture-rotation": [
+    ["Math.PI * 0.5", (s) => s.replace("Math.PI / 2;", "Math.PI * 0.5;")],
+    ["the rotation set before the center", (s) => s.replace(ROTATION_CENTER + ROTATION_ANGLE, ROTATION_ANGLE + ROTATION_CENTER)],
   ],
 };
 

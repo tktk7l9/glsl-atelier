@@ -1,7 +1,7 @@
-// Minimal offline support. Navigations (incl. the sandbox iframe) are
-// network-first so deploys are picked up online, with a per-URL cached fallback
-// (and the app shell as a last resort). Other same-origin GETs are cache-first
-// with runtime caching (build assets are content-hashed).
+// Minimal offline support. Navigations are network-first so deploys are picked
+// up online, with a per-URL cached fallback (and the app shell as a last
+// resort). Other same-origin GETs are cache-first with runtime caching (build
+// assets are content-hashed).
 //
 // This is a template: the build (lessonChunks() in vite.config.ts) emits it as
 // /sw.js with PRECACHE filled in (the lesson runtime and every track's lesson
@@ -10,7 +10,11 @@
 // file of the build, so a new worker can drop the previous build's.
 
 const CACHE = "glsl-atelier-v1";
-const SHELL = ["/", "/index.html", "/sandbox.html", "/favicon.svg", "/manifest.webmanifest"];
+// Cloudflare redirects /index.html to /, and a redirected response may not
+// answer a navigation (Chrome refuses it), so the shell is cached as "/". The
+// learner-code sandbox page is not cached at all: the navigation of an
+// opaque-origin (sandboxed) iframe never reaches a service worker.
+const SHELL = ["/", "/favicon.svg", "/manifest.webmanifest"];
 const PRECACHE = [];
 const ASSETS = [];
 
@@ -59,7 +63,13 @@ self.addEventListener("fetch", (event) => {
           }
           return res;
         })
-        .catch(() => caches.match(req).then((hit) => hit || caches.match("/index.html"))),
+        .catch(() =>
+          caches
+            .match(req)
+            // An entry an earlier worker cached through a redirect cannot answer
+            // a navigation.
+            .then((hit) => (hit && !hit.redirected ? hit : caches.match("/"))),
+        ),
     );
     return;
   }

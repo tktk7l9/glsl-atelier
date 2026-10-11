@@ -213,7 +213,7 @@ brand.addEventListener("click", (e) => {
   navigateTo(null);
 });
 window.addEventListener("hashchange", () => void route());
-void route();
+const firstScreen = route();
 
 // Warm the heavy lesson chunk on first interaction. A failure here is reported
 // by the navigation that needs the chunk.
@@ -221,15 +221,20 @@ const warm = (): void => void ensureApp().catch(() => undefined);
 window.addEventListener("pointerdown", warm, { once: true });
 window.addEventListener("keydown", warm, { once: true });
 
-// Cosmic background (Three.js + bloom) — lazy, after first paint, non-blocking.
+// Cosmic background (Three.js + bloom) — lazy and non-blocking. It is
+// decoration, so it waits until the first screen (the catalogue, or a linked
+// lesson once its chunks have arrived) is up, then for idle time: its 135 kB
+// chunk must not compete with what the learner came for.
 function startBackground(): void {
   void import("./viz/background.js").then((m) => m.createBackground(bg, reducedMotion));
 }
-if ("requestIdleCallback" in window) {
-  (window as Window & { requestIdleCallback(cb: () => void): void }).requestIdleCallback(startBackground);
-} else {
-  setTimeout(startBackground, 600);
-}
+void firstScreen.finally(() => {
+  if ("requestIdleCallback" in window) {
+    (window as Window & { requestIdleCallback(cb: () => void): void }).requestIdleCallback(startBackground);
+  } else {
+    setTimeout(startBackground, 600);
+  }
+});
 
 // Service worker for offline use (production only).
 if (import.meta.env.PROD && "serviceWorker" in navigator) {

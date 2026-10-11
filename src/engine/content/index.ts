@@ -145,6 +145,18 @@ export const TRACKS: readonly TrackMeta[] = [
     ],
   },
   {
+    id: "glsl-fractal",
+    domain: "glsl",
+    title: "フラクタル",
+    summary: "z = z² + c をくり返すだけで、どこまで拡大しても細かい模様が現れる。マンデルブロ集合を描き、脱出の速さで色を付け、ジュリア集合へ。",
+    icon: "❄️",
+    lessons: [
+      { id: "glsl-mandelbrot", title: "マンデルブロ集合: z = z² + c" },
+      { id: "glsl-escape-time", title: "脱出の速さで塗る: くり返しの回数" },
+      { id: "glsl-julia", title: "ジュリア集合: c を固定する" },
+    ],
+  },
+  {
     id: "glsl-post",
     domain: "glsl",
     title: "仕上げのエフェクト",
@@ -278,6 +290,18 @@ export const TRACKS: readonly TrackMeta[] = [
       { id: "three-look-at", title: "的を向く: lookAt" },
       { id: "three-instanced", title: "大量に並べる: InstancedMesh" },
       { id: "three-instance-color", title: "1つずつ色を変える: setColorAt" },
+    ],
+  },
+  {
+    id: "three-math",
+    domain: "three",
+    title: "位置と回転の計算",
+    summary: "Vector3 の lerp で 2点のあいだに置き、Quaternion で好きな軸のまわりに回し、球面座標（Spherical）で緯度と経度から位置を決める。",
+    icon: "🎯",
+    lessons: [
+      { id: "three-lerp", title: "2点のあいだに置く: Vector3 の lerp" },
+      { id: "three-quaternion", title: "好きな軸で回す: Quaternion" },
+      { id: "three-spherical", title: "緯度と経度で置く: 球面座標" },
     ],
   },
   {
@@ -425,6 +449,7 @@ const LOADERS: Readonly<Record<string, () => Promise<{ readonly track: Track }>>
   "glsl-polar": () => import("./tracks/glsl-polar.js"),
   "glsl-noise": () => import("./tracks/glsl-noise.js"),
   "glsl-tiling": () => import("./tracks/glsl-tiling.js"),
+  "glsl-fractal": () => import("./tracks/glsl-fractal.js"),
   "glsl-post": () => import("./tracks/glsl-post.js"),
   "glsl-filter": () => import("./tracks/glsl-filter.js"),
   "glsl-convolution": () => import("./tracks/glsl-convolution.js"),
@@ -435,6 +460,7 @@ const LOADERS: Readonly<Record<string, () => Promise<{ readonly track: Track }>>
   "three-material": () => import("./tracks/three-material.js"),
   "three-light": () => import("./tracks/three-light.js"),
   "three-transform": () => import("./tracks/three-transform.js"),
+  "three-math": () => import("./tracks/three-math.js"),
   "three-camera": () => import("./tracks/three-camera.js"),
   "three-animation": () => import("./tracks/three-animation.js"),
   "three-data": () => import("./tracks/three-data.js"),

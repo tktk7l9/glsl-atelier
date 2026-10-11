@@ -35,16 +35,16 @@ const UV_SQUARE = (uvs: string, wire: string, material: string, note = ""): stri
   "scene.add(square);\n";
 
 /** An 8×8 sprite sheet: four 4×4 cells, each a 2×2 picture (a bottom and a
- *  top row colour) inside a one-texel margin in the background colour, the
- *  usual sprite-sheet padding. Drawn antialiased, a pixel on the board's edge
- *  is shaded a little outside it, where the uv steps over into the next cell:
- *  the margin keeps that from showing as a line of the neighbour's colour.
- *  Cells: bottom left red / green, bottom right white / orange, top left
- *  blue / cyan, top right magenta / yellow. */
+ *  top row colour) inside a one-texel black margin, the usual sprite-sheet
+ *  padding (black reads as the near-black background). Drawn antialiased, a
+ *  pixel on the board's edge is shaded a little outside it, where the uv
+ *  steps over into the next cell: the margin keeps that from showing as a
+ *  line of the neighbour's colour. Cells: bottom left red / green, bottom
+ *  right white / orange, top left blue / cyan, top right magenta / yellow. */
 const SHEET_TEXTURE =
   "// 8×8 ピクセルの画像に、4×4 ピクセルのコマが 4つ。どのコマも、内側の 2×2 に絵があり、\n" +
-  "// まわり 1ピクセルは背景と同じ色の余白（_）になっている（下の段から 1行ずつ）\n" +
-  "const _ = [5, 6, 13], R = [255, 0, 0], G = [0, 255, 0], W = [255, 255, 255], O = [255, 128, 0];\n" +
+  "// まわり 1ピクセルは黒い余白（_）になっている（下の段から 1行ずつ）\n" +
+  "const _ = [0, 0, 0], R = [255, 0, 0], G = [0, 255, 0], W = [255, 255, 255], O = [255, 128, 0];\n" +
   "const B = [0, 0, 255], C = [0, 255, 255], M = [255, 0, 255], Y = [255, 255, 0];\n" +
   "const rows = [\n" +
   "  [_, _, _, _, _, _, _, _],\n" +
@@ -148,7 +148,7 @@ export const track: Track = {
         "ゲームのキャラクターのコマやアイコンでよく使われます。そこから 1コマだけを貼るには、テクスチャの <code>repeat</code> で<b>画像の何分の1を貼るか</b>、" +
         "<code>offset</code> で<b>どこから貼るか</b>を決めます。2×2 に並んだコマなら、<code>repeat.set(0.5, 0.5)</code> で縦横半分、<code>offset.set(0.5, 0.5)</code> で" +
         "右上のコマです（offset も uv と同じく、左下が 0、右上が 1）。スプライトシートでは、コマのまわりに余白を空けておくのが定番です。" +
-        "ふちのピクセルを描くとき、となりのコマの色がほんの少しにじむのを防ぐためで、この画像も、どのコマもまわり 1ピクセルが背景と同じ色の余白です。</p>",
+        "ふちのピクセルを描くとき、となりのコマの色がほんの少しにじむのを防ぐためで、この画像も、どのコマもまわり 1ピクセルが黒い余白です。</p>",
       challenge: {
         starterCode:
           SHEET_TEXTURE + "\n// ここで、右上のコマ（下が赤紫・上が黄）だけが貼られるように、貼る範囲と位置を変えよう\n\n" + TEXTURED_PLANE,

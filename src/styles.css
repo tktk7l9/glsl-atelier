@@ -165,6 +165,26 @@ main:empty {
   min-height: 100vh;
 }
 
+/* Shown in place of a lesson whose content could not be fetched. */
+.load-error {
+  max-width: 62ch;
+  padding: 20px 22px;
+}
+.load-error h1 {
+  margin: 0 0 10px;
+  font-size: 1.3rem;
+}
+.load-error h1:focus {
+  outline: none;
+}
+.load-error p {
+  margin: 0 0 16px;
+  line-height: 1.7;
+}
+.load-error .back-link {
+  margin-left: 14px;
+}
+
 /* ---- catalogue ---- */
 .intro {
   margin: 8px 0 26px;

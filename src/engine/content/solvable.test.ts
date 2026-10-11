@@ -27,7 +27,14 @@ import { evaluate } from "../validate/run.js";
 import type { ValidatorSpec } from "../validate/primitives.js";
 import type { RGB, Sample, SceneSnapshot, ShaderSnapshot } from "../validate/snapshot.js";
 import { collectObjects } from "../../sandbox/scene-graph.js";
-import { LESSONS, lessonById } from "./index.js";
+import { TRACKS, loadTrack } from "./index.js";
+import type { Lesson } from "./types.js";
+
+// Lessons load with their track on demand; load them all once to judge them.
+const LESSONS: readonly Lesson[] = (await Promise.all(TRACKS.map((t) => loadTrack(t.id)))).flatMap(
+  (t) => t.lessons,
+);
+const lessonById = (id: string): Lesson | undefined => LESSONS.find((l) => l.id === id);
 
 // ---------------------------------------------------------------- shader side
 

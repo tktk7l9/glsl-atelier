@@ -3,7 +3,7 @@
 // with completion marks and a progress bar.
 
 import { LESSONS, TRACKS, lessonById } from "../engine/content/index.js";
-import type { Domain, Track } from "../engine/content/types.js";
+import type { Domain, TrackMeta } from "../engine/content/types.js";
 import {
   completion,
   firstIncomplete,
@@ -26,7 +26,7 @@ const SECTIONS: ReadonlyArray<{ domain: Domain; title: string; blurb: string }> 
 ];
 
 function trackCard(
-  track: Track,
+  track: TrackMeta,
   completed: readonly string[],
   completedSet: ReadonlySet<string>,
   onOpen: (lessonId: string) => void,

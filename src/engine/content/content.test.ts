@@ -1,6 +1,17 @@
 import { describe, expect, it } from "vitest";
 import type { ValidatorSpec } from "../validate/primitives.js";
-import { LESSONS, TRACKS, domainOf, lessonById, nextLesson, prevLesson, trackOf } from "./index.js";
+import {
+  LESSONS,
+  TRACKS,
+  domainOf,
+  lessonById,
+  loadLesson,
+  loadTrack,
+  nextLesson,
+  prevLesson,
+  trackOf,
+} from "./index.js";
+import type { Track } from "./types.js";
 
 /** Collect sourceMatches patterns the SOLUTION must satisfy (top-level + allOf,
  *  but not anyOf branches, where only one alternative needs to match). */
@@ -12,6 +23,9 @@ function requiredPatterns(specs: readonly ValidatorSpec[]): string[] {
   }
   return out;
 }
+
+// Every track with its lessons, loaded the way the app loads them.
+const LOADED: readonly Track[] = await Promise.all(TRACKS.map((t) => loadTrack(t.id)));
 
 describe("catalogue integrity", () => {
   it("has tracks and lessons", () => {
@@ -40,8 +54,32 @@ describe("catalogue integrity", () => {
   });
 });
 
+describe("the catalogue and the track modules agree", () => {
+  it("each module holds exactly its catalogue entry: id, domain, title, summary, icon and lesson ids and titles", () => {
+    LOADED.forEach((track, i) => {
+      const meta = TRACKS[i];
+      expect({ ...track, lessons: track.lessons.map(({ id, title }) => ({ id, title })) }).toEqual(meta);
+    });
+  });
+
+  it("every module under tracks/ (but the shared helpers) is in the catalogue", () => {
+    const files = Object.keys(import.meta.glob("./tracks/*.ts"))
+      .map((p) => p.replace(/^\.\/tracks\/|\.ts$/g, ""))
+      .filter((name) => !name.startsWith("shared-"));
+    expect(files.sort()).toEqual(TRACKS.map((t) => t.id).sort());
+  });
+
+  it("loads a lesson with its challenge, and rejects ids that are not in the catalogue", async () => {
+    const lesson = await loadLesson(LESSONS[1].id);
+    expect(lesson.title).toBe(LESSONS[1].title);
+    expect(lesson.challenge.validators.length).toBeGreaterThan(0);
+    await expect(loadLesson("nope")).rejects.toThrow("unknown lesson: nope");
+    await expect(loadTrack("nope")).rejects.toThrow("unknown track: nope");
+  });
+});
+
 describe("each lesson", () => {
-  for (const lesson of LESSONS) {
+  for (const lesson of LOADED.flatMap((t) => t.lessons)) {
     describe(lesson.id, () => {
       const c = lesson.challenge;
 
@@ -64,7 +102,7 @@ describe("each lesson", () => {
       });
 
       it("is resolvable through the index helpers", () => {
-        expect(lessonById(lesson.id)).toBe(lesson);
+        expect(lessonById(lesson.id)?.title).toBe(lesson.title);
         expect(trackOf(lesson.id)).toBeDefined();
         expect(domainOf(lesson.id)).toBeDefined();
       });

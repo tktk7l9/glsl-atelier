@@ -295,6 +295,18 @@ export const TRACKS: readonly TrackMeta[] = [
     ],
   },
   {
+    id: "glsl-rm-shading",
+    domain: "glsl",
+    title: "レイマーチングの仕上げ",
+    summary: "影のふちをぼかし（ソフトシャドウ）、物のすき間を暗くし（アンビエントオクルージョン）、床に映り込みを足して（reflect）、レイマーチングの絵を仕上げる。",
+    icon: "🌗",
+    lessons: [
+      { id: "glsl-soft-shadow", title: "やわらかい影: ソフトシャドウ" },
+      { id: "glsl-ambient-occlusion", title: "すき間を暗く: アンビエントオクルージョン" },
+      { id: "glsl-reflection", title: "床に映す: reflect でもう一度進む" },
+    ],
+  },
+  {
     id: "three-basics",
     domain: "three",
     title: "シーンの基本",
@@ -510,6 +522,18 @@ export const TRACKS: readonly TrackMeta[] = [
     ],
   },
   {
+    id: "three-shape",
+    domain: "three",
+    title: "輪郭を描く（Shape と Path）",
+    summary: "Shape の輪郭を曲線でふくらませ（quadraticCurveTo）、円弧で扇形を描き（absarc）、Path で穴をあける（holes）。",
+    icon: "✂️",
+    lessons: [
+      { id: "three-shape-curve", title: "曲線でふくらませる: quadraticCurveTo" },
+      { id: "three-shape-arc", title: "扇形を描く: absarc" },
+      { id: "three-shape-hole", title: "穴をあける: holes" },
+    ],
+  },
+  {
     id: "three-path",
     domain: "three",
     title: "曲線にそって置く",
@@ -605,6 +629,7 @@ const LOADERS: Readonly<Record<string, () => Promise<{ readonly track: Track }>>
   "glsl-advanced": () => import("./tracks/glsl-advanced.js"),
   "glsl-sdf3d": () => import("./tracks/glsl-sdf3d.js"),
   "glsl-lighting": () => import("./tracks/glsl-lighting.js"),
+  "glsl-rm-shading": () => import("./tracks/glsl-rm-shading.js"),
   "three-basics": () => import("./tracks/three-basics.js"),
   "three-geometry": () => import("./tracks/three-geometry.js"),
   "three-material": () => import("./tracks/three-material.js"),
@@ -622,6 +647,7 @@ const LOADERS: Readonly<Record<string, () => Promise<{ readonly track: Track }>>
   "three-texture": () => import("./tracks/three-texture.js"),
   "three-deform": () => import("./tracks/three-deform.js"),
   "three-curves": () => import("./tracks/three-curves.js"),
+  "three-shape": () => import("./tracks/three-shape.js"),
   "three-path": () => import("./tracks/three-path.js"),
   "three-lines-sprites": () => import("./tracks/three-lines-sprites.js"),
   "three-atmosphere": () => import("./tracks/three-atmosphere.js"),

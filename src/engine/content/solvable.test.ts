@@ -667,6 +667,85 @@ function twoLights(x: number, y: number, combine: (a: number, b: number) => numb
 }
 const expTone = (v: number): number => 1 - Math.exp(-v);
 
+/** The ray-marching finishing lessons look down at the sphere on the floor
+ *  from the front: a lookAt camera at LOOK_FROM aimed at (0, -0.5, 0). */
+const LOOK_FROM: V3 = [0, 1.6, 3.4];
+const v3cross = (a: V3, b: V3): V3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const LOOK_FW = v3norm(v3add([0, -0.5, 0], v3scale(LOOK_FROM, -1)));
+const LOOK_RT = v3norm(v3cross(LOOK_FW, [0, 1, 0]));
+const LOOK_UP = v3cross(LOOK_RT, LOOK_FW);
+const FRONT_LIGHT = v3norm([-0.8, 0.5, 0.6]);
+/** March the floor scene from ro along rd (a hit is closer than 0.001 t). */
+function marchFrom(ro: V3, rd: V3): V3 | null {
+  let t = 0;
+  for (let i = 0; i < 100; i++) {
+    const p = v3add(ro, v3scale(rd, t));
+    const d = floorScene(p);
+    if (d < 0.001 * t) return p;
+    t += d;
+    if (t > 20) break;
+  }
+  return null;
+}
+/** The looked-down view; `shade(p, n, rd)` colours a hit point. */
+function lookDown(x: number, y: number, shade: (p: V3, n: V3, rd: V3) => RGB): RGB {
+  const [u, v] = centred(x, y);
+  const rd = v3norm(v3add(v3add(v3scale(LOOK_RT, u), v3scale(LOOK_UP, v)), v3scale(LOOK_FW, 1.6)));
+  const p = marchFrom(LOOK_FROM, rd);
+  return p ? shade(p, gradientNormal(p), rd) : SKY;
+}
+/** softShadow(): `step(h, t, res)` gives the next res, or null to return 0 at once. */
+type ShadowStep = (h: number, t: number, res: number) => number | null;
+function softShadow(ro: V3, step: ShadowStep): number {
+  let res = 1;
+  let t = 0.02;
+  for (let i = 0; i < 64; i++) {
+    const h = floorScene(v3add(ro, v3scale(FRONT_LIGHT, t)));
+    const next = step(h, t, res);
+    if (next === null) return 0;
+    res = next;
+    t += clamp(h, 0.01, 0.2);
+    if (t > 10) break;
+  }
+  return clamp(res, 0, 1);
+}
+const softShadowLesson = (x: number, y: number, step: ShadowStep): RGB =>
+  lookDown(x, y, (p, n) => grey(0.08 + 0.92 * Math.max(v3dot(n, FRONT_LIGHT), 0) * softShadow(v3add(p, v3scale(n, 0.01)), step)));
+/** ambientOcclusion(): `add(occ, h, d, w)` gives the next occ. */
+type OcclusionStep = (occ: number, h: number, d: number, w: number) => number;
+function ambientOcclusion(p: V3, n: V3, add: OcclusionStep): number {
+  let occ = 0;
+  let w = 1;
+  for (let i = 1; i <= 5; i++) {
+    const h = 0.1 * i;
+    occ = add(occ, h, floorScene(v3add(p, v3scale(n, h))), w);
+    w *= 0.7;
+  }
+  return clamp(1 - 1.5 * occ, 0, 1);
+}
+const occlusionLesson = (x: number, y: number, add: OcclusionStep): RGB =>
+  lookDown(x, y, (p, n) => grey(0.9 * (0.5 + 0.5 * n[1]) * ambientOcclusion(p, n, add)));
+/** The reflection lesson: a dark floor and an orange sphere, lit from the front left. */
+const onFloor = (p: V3): boolean => p[1] + 1 < Math.hypot(p[0], p[1], p[2]) - 1;
+function litSurface(p: V3, n: V3): RGB {
+  const diff = Math.max(v3dot(n, FRONT_LIGHT), 0);
+  const base = onFloor(p) ? [0.3, 0.3, 0.32] : [1, 0.45, 0.15];
+  return rgb(base.map((c) => c * (0.35 + 0.65 * diff)));
+}
+function traceRay(ro: V3, rd: V3): RGB {
+  const p = marchFrom(ro, rd);
+  return p ? litSurface(p, gradientNormal(p)) : SKY;
+}
+const reflectV3 = (i: V3, n: V3): V3 => v3add(i, v3scale(n, -2 * v3dot(n, i)));
+/** `bounce(p, n, rd)` is the colour mixed into the floor by `k` (null: none). */
+const mirrorLesson = (x: number, y: number, bounce: (p: V3, n: V3, rd: V3) => RGB | null, k = 0.5): RGB =>
+  lookDown(x, y, (p, n, rd) => {
+    const col = litSurface(p, n);
+    const seen = onFloor(p) ? bounce(p, n, rd) : null;
+    return seen ? mixRgb(col, seen, k) : col;
+  });
+const mirrored = (p: V3, n: V3, rd: V3): RGB => traceRay(v3add(p, v3scale(n, 0.01)), reflectV3(rd, n));
+
 const SHADER_MODELS: Record<string, { starter: Shade; solution: Shade }> = {
   "glsl-repeat-dots": {
     starter: (x, y) => grey(1 - step(0.3, length(x - 0.5, y - 0.5))),
@@ -985,6 +1064,19 @@ const SHADER_MODELS: Record<string, { starter: Shade; solution: Shade }> = {
     starter: (x, y) => twoLights(x, y, (a, b) => Math.max(a, b)),
     solution: (x, y) => twoLights(x, y, (a, b) => expTone(a + b)),
   },
+  // 2026-10, fifteenth batch.
+  "glsl-soft-shadow": {
+    starter: (x, y) => softShadowLesson(x, y, (h) => (h < 0.001 ? null : 1)),
+    solution: (x, y) => softShadowLesson(x, y, (h, t, res) => Math.min(res, (4 * h) / t)),
+  },
+  "glsl-ambient-occlusion": {
+    starter: (x, y) => occlusionLesson(x, y, (occ) => occ),
+    solution: (x, y) => occlusionLesson(x, y, (occ, h, d, w) => occ + (h - d) * w),
+  },
+  "glsl-reflection": {
+    starter: (x, y) => mirrorLesson(x, y, () => null),
+    solution: (x, y) => mirrorLesson(x, y, mirrored),
+  },
 };
 
 describe("shader lessons modelled on the grader's sample grid", () => {
@@ -1289,6 +1381,27 @@ const SHADER_NEAR_MISSES: Record<string, ReadonlyArray<readonly [string, Shade]>
     ["multiplied, tone-mapped", (x, y) => twoLights(x, y, (a, b) => expTone(a * b))],
     ["Reinhard col / (1.0 + col) instead", (x, y) => twoLights(x, y, (a, b) => (a + b) / (1 + a + b))],
   ],
+  // 2026-10, fifteenth batch.
+  "glsl-soft-shadow": [
+    ["without the 4.0 (h / t): the lit floor darkens too", (x, y) => softShadowLesson(x, y, (h, t, res) => Math.min(res, h / t))],
+    ["not divided by t (4.0 * h)", (x, y) => softShadowLesson(x, y, (h, _t, res) => Math.min(res, 4 * h))],
+    ["upside down (4.0 * t / h)", (x, y) => softShadowLesson(x, y, (h, t, res) => Math.min(res, (4 * t) / h))],
+    ["without min (only the last step counts)", (x, y) => softShadowLesson(x, y, (h, t) => (4 * h) / t)],
+    ["8.0 instead of 4.0 (sharper)", (x, y) => softShadowLesson(x, y, (h, t, res) => Math.min(res, (8 * h) / t))],
+  ],
+  "glsl-ambient-occlusion": [
+    ["d - h (the sign flipped: nothing darkens)", (x, y) => occlusionLesson(x, y, (occ, h, d, w) => occ + (d - h) * w)],
+    ["h - d without the weight", (x, y) => occlusionLesson(x, y, (occ, h, d) => occ + (h - d))],
+    ["d alone", (x, y) => occlusionLesson(x, y, (occ, _h, d, w) => occ + d * w)],
+    ["(h - d) / h", (x, y) => occlusionLesson(x, y, (occ, h, d, w) => occ + ((h - d) / h) * w)],
+  ],
+  "glsl-reflection": [
+    ["reflect(n, rd): the arguments swapped", (x, y) => mirrorLesson(x, y, (p, n, rd) => traceRay(v3add(p, v3scale(n, 0.01)), reflectV3(n, rd)))],
+    ["rd: on into the floor", (x, y) => mirrorLesson(x, y, (p, n, rd) => traceRay(v3add(p, v3scale(n, 0.01)), rd))],
+    ["-reflect(rd, n): backwards", (x, y) => mirrorLesson(x, y, (p, n, rd) => traceRay(v3add(p, v3scale(n, 0.01)), v3scale(reflectV3(rd, n), -1)))],
+    ["n: straight up", (x, y) => mirrorLesson(x, y, (p, n) => traceRay(v3add(p, v3scale(n, 0.01)), n))],
+    ["mixed in fully (a perfect mirror)", (x, y) => mirrorLesson(x, y, mirrored, 1)],
+  ],
 };
 
 describe("shader near misses are rejected", () => {
@@ -1426,6 +1539,13 @@ const SHADER_VARIANTS: Record<string, ReadonlyArray<readonly [string, Shade]>> =
     ],
   ],
   "glsl-glow-add": [["1.0 - exp(-(a + b)) in one line", (x, y) => twoLights(x, y, (a, b) => expTone(a + b))]],
+  // 2026-10, fifteenth batch.
+  "glsl-soft-shadow": [
+    ["h * 4.0 / t", (x, y) => softShadowLesson(x, y, (h, t, res) => Math.min(res, (h * 4) / t))],
+    ["the hard return kept before it", (x, y) => softShadowLesson(x, y, (h, t, res) => (h < 0.001 ? null : Math.min(res, (4 * h) / t)))],
+  ],
+  "glsl-ambient-occlusion": [["w * (h - d)", (x, y) => occlusionLesson(x, y, (occ, h, d, w) => occ + w * (h - d))]],
+  "glsl-reflection": [["rd - 2.0 * dot(n, rd) * n by hand", (x, y) => mirrorLesson(x, y, (p, n, rd) => traceRay(v3add(p, v3scale(n, 0.01)), v3add(rd, v3scale(n, -2 * v3dot(n, rd)))))]],
 };
 
 describe("shader variants are accepted", () => {
@@ -1940,6 +2060,9 @@ const FLAT_LESSONS = [
   "three-lathe",
   "three-extrude",
   "three-tube",
+  "three-shape-curve",
+  "three-shape-arc",
+  "three-shape-hole",
   "three-curve-point",
   "three-spaced-points",
   "three-curve-tangent",
@@ -2030,6 +2153,12 @@ const HALF_WAY_LINE = "marker.position.copy(curve.getPointAt(0.5));";
 const BEADS_LOOP = /curve\.getSpacedPoints\(4\)\.forEach\(\(p\) => \{[^\n]*\n/;
 const BEADS_END = "  scene.add(bead);\n});\n";
 const TANGENT_LINE = "car.lookAt(point.clone().add(curve.getTangentAt(0.5)));";
+/** Lines of the fifteenth-batch scene solutions that the edits below change. */
+const UPPER_CURVE = "shape.quadraticCurveTo(0, 1.6, 1.6, 0);";
+const LOWER_CURVE = "shape.quadraticCurveTo(0, -1.6, -1.6, 0);";
+const PIE_ARC = "shape.absarc(0, 0, 1.6, Math.PI * 0.75, Math.PI * 2.25, false);";
+const TO_CENTRE = "shape.lineTo(0, 0);";
+const HOLE_PUSH = "shape.holes.push(hole);";
 
 /** Plausible wrong answers to the 2026-10 (third to sixth batch) unlit scene
  *  lessons, as edits of the solution; each must be rejected at both preview
@@ -2275,6 +2404,47 @@ const SCENE_NEAR_MISSES: Record<string, ReadonlyArray<readonly [string, (solutio
     ["the tangent itself as the point to look at", (s) => s.replace(TANGENT_LINE, "car.lookAt(curve.getTangentAt(0.5));")],
     ["getTangent (by the curve's own parameter)", (s) => s.replace("getTangentAt(0.5)", "getTangent(0.5)")],
   ],
+  // 2026-10, fifteenth batch.
+  "three-shape-curve": [
+    [
+      "control points at half the height (0, ±0.8)",
+      (s) => s.replace(UPPER_CURVE, "shape.quadraticCurveTo(0, 0.8, 1.6, 0);").replace(LOWER_CURVE, "shape.quadraticCurveTo(0, -0.8, -1.6, 0);"),
+    ],
+    [
+      "control point and end point swapped",
+      (s) => s.replace(UPPER_CURVE, "shape.quadraticCurveTo(1.6, 0, 0, 1.6);").replace(LOWER_CURVE, "shape.quadraticCurveTo(-1.6, 0, 0, -1.6);"),
+    ],
+    [
+      "straight lines through the control points",
+      (s) =>
+        s
+          .replace(UPPER_CURVE, "shape.lineTo(0, 1.6); shape.lineTo(1.6, 0);  // quadraticCurveTo")
+          .replace(LOWER_CURVE, "shape.lineTo(0, -1.6); shape.lineTo(-1.6, 0);"),
+    ],
+    [
+      "bezierCurveTo with the control point twice",
+      (s) => s.replace(UPPER_CURVE, "shape.bezierCurveTo(0, 1.6, 0, 1.6, 1.6, 0);").replace(LOWER_CURVE, "shape.bezierCurveTo(0, -1.6, 0, -1.6, -1.6, 0);"),
+    ],
+  ],
+  "three-shape-arc": [
+    ["the angles in degrees", (s) => s.replace(PIE_ARC, "shape.absarc(0, 0, 1.6, 135, 405, false);")],
+    ["clockwise (true): only the missing quarter", (s) => s.replace(PIE_ARC, "shape.absarc(0, 0, 1.6, Math.PI * 0.75, Math.PI * 2.25, true);")],
+    ["start and end swapped", (s) => s.replace(PIE_ARC, "shape.absarc(0, 0, 1.6, Math.PI * 2.25, Math.PI * 0.75, false);")],
+    ["no line to the centre (the arc closed by a chord)", (s) => s.replace(TO_CENTRE, "// lineTo")],
+    ["moveTo(0, 0) but no line to the centre", (s) => s.replace(PIE_ARC, "shape.moveTo(0, 0);\n" + PIE_ARC).replace(TO_CENTRE, "// lineTo")],
+  ],
+  "three-shape-hole": [
+    ["the hole made but never added", (s) => s.replace(HOLE_PUSH, "// shape.holes")],
+    [
+      "the hole as a second shape",
+      (s) =>
+        s
+          .replace("const hole = new THREE.Path();", "const hole = new THREE.Shape();  // holes")
+          .replace(HOLE_PUSH, "")
+          .replace("new THREE.ShapeGeometry(shape, 48)", "new THREE.ShapeGeometry([shape, hole], 48)"),
+    ],
+    ["the hole as big as the plate", (s) => s.replace("hole.absarc(0, 0, 0.8,", "hole.absarc(0, 0, 1.6,")],
+  ],
 };
 
 /** Other correct ways to write the fifth- and sixth-batch unlit scene lessons;
@@ -2470,6 +2640,29 @@ const SCENE_VARIANTS: Record<string, ReadonlyArray<readonly [string, (solution: 
     ["lookAt(x, y, z)", (s) => s.replace(TANGENT_LINE, "const t = curve.getTangentAt(0.5);\ncar.lookAt(point.x + t.x, point.y + t.y, point.z + t.z);")],
     ["a point further ahead (addScaledVector)", (s) => s.replace(TANGENT_LINE, "car.lookAt(point.clone().addScaledVector(curve.getTangentAt(0.5), 3));")],
     ["quaternion.setFromUnitVectors", (s) => s.replace(TANGENT_LINE, "car.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), curve.getTangentAt(0.5));")],
+  ],
+  // 2026-10, fifteenth batch.
+  "three-shape-curve": [
+    ["the two curves chained", (s) => s.replace(UPPER_CURVE, "shape.quadraticCurveTo(0, 1.6, 1.6, 0).quadraticCurveTo(0, -1.6, -1.6, 0);").replace(LOWER_CURVE, "")],
+    [
+      "the same curves as bezierCurveTo",
+      (s) =>
+        s
+          .replace(UPPER_CURVE, "shape.bezierCurveTo(-0.5333, 1.0667, 0.5333, 1.0667, 1.6, 0);")
+          .replace(LOWER_CURVE, "shape.bezierCurveTo(0.5333, -1.0667, -0.5333, -1.0667, -1.6, 0);"),
+    ],
+    ["more curve segments", (s) => s.replace("ShapeGeometry(shape, 24)", "ShapeGeometry(shape, 64)")],
+  ],
+  "three-shape-arc": [
+    ["moveTo(0, 0) first, as in many examples", (s) => s.replace(PIE_ARC, "shape.moveTo(0, 0);\n" + PIE_ARC)],
+    ["from -225° to 45°", (s) => s.replace(PIE_ARC, "shape.absarc(0, 0, 1.6, -Math.PI * 1.25, Math.PI * 0.25, false);")],
+    ["absellipse with equal radii", (s) => s.replace(PIE_ARC, "shape.absellipse(0, 0, 1.6, 1.6, Math.PI * 0.75, Math.PI * 2.25, false);")],
+    ["degToRad", (s) => s.replace(PIE_ARC, "shape.absarc(0, 0, 1.6, THREE.MathUtils.degToRad(135), THREE.MathUtils.degToRad(405), false);")],
+  ],
+  "three-shape-hole": [
+    ["holes = [hole]", (s) => s.replace(HOLE_PUSH, "shape.holes = [hole];")],
+    ["a counter-clockwise hole", (s) => s.replace("hole.absarc(0, 0, 0.8, 0, Math.PI * 2, true);", "hole.absarc(0, 0, 0.8, 0, Math.PI * 2, false);")],
+    ["a Shape as the hole", (s) => s.replace("const hole = new THREE.Path();", "const hole = new THREE.Shape();")],
   ],
 };
 

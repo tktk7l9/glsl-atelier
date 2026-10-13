@@ -746,6 +746,38 @@ const mirrorLesson = (x: number, y: number, bounce: (p: V3, n: V3, rd: V3) => RG
   });
 const mirrored = (p: V3, n: V3, rd: V3): RGB => traceRay(v3add(p, v3scale(n, 0.01)), reflectV3(rd, n));
 
+/** The SDF-operations lessons: a shape filled over the dark ground where its distance is negative. */
+const OPS_BG: RGB = [0.05, 0.07, 0.15];
+const ROUNDED: RGB = [0.95, 0.55, 0.25];
+const MORPHED: RGB = [0.45, 0.85, 0.6];
+const DOT_FILL: RGB = [0.3, 0.9, 1];
+const opsFill = (colour: RGB, d: number): RGB => mixRgb(OPS_BG, colour, 1 - step(0, d));
+/** The rounded-box lesson: `measure(px, py)` is the distance in the centred coordinate. */
+function roundBox(x: number, y: number, measure: (px: number, py: number) => number): RGB {
+  const [px, py] = centred(x, y);
+  return opsFill(ROUNDED, measure(px, py));
+}
+/** The morph lesson: `blend(circle, square)` is the distance drawn. */
+function morphed(x: number, y: number, blend: (circle: number, square: number) => number): RGB {
+  const [px, py] = centred(x, y);
+  return opsFill(MORPHED, blend(length(px, py) - 0.6, sdBox(px, py, 0.6, 0.6)));
+}
+/** The counted-dots lesson: `fold(px, py)` moves the point into its dot's frame. */
+const DOT_STEP = 0.3;
+function countedDots(x: number, y: number, fold: (px: number, py: number) => [number, number]): RGB {
+  const [px, py] = centred(x, y);
+  const [qx, qy] = fold(px, py);
+  return opsFill(DOT_FILL, length(qx, qy) - 0.1);
+}
+/** p -= s * clamp(floor(p / s + offset), lo, hi), per axis. */
+const clampedCell =
+  (lo: readonly [number, number], hi: readonly [number, number], offset = 0.5) =>
+  (px: number, py: number): [number, number] => [
+    px - DOT_STEP * clamp(Math.floor(px / DOT_STEP + offset), lo[0], hi[0]),
+    py - DOT_STEP * clamp(Math.floor(py / DOT_STEP + offset), lo[1], hi[1]),
+  ];
+const endless = (v: number): number => glslMod(v + DOT_STEP * 0.5, DOT_STEP) - DOT_STEP * 0.5;
+
 const SHADER_MODELS: Record<string, { starter: Shade; solution: Shade }> = {
   "glsl-repeat-dots": {
     starter: (x, y) => grey(1 - step(0.3, length(x - 0.5, y - 0.5))),
@@ -1077,6 +1109,19 @@ const SHADER_MODELS: Record<string, { starter: Shade; solution: Shade }> = {
     starter: (x, y) => mirrorLesson(x, y, () => null),
     solution: (x, y) => mirrorLesson(x, y, mirrored),
   },
+  // 2026-10, sixteenth batch.
+  "glsl-round-box": {
+    starter: (x, y) => roundBox(x, y, (px, py) => sdBox(px, py, 0.66, 0.5)),
+    solution: (x, y) => roundBox(x, y, (px, py) => sdBox(px, py, 0.66 - 0.3, 0.5 - 0.3) - 0.3),
+  },
+  "glsl-sdf-morph": {
+    starter: (x, y) => morphed(x, y, (circle) => circle),
+    solution: (x, y) => morphed(x, y, (circle, square) => mix(circle, square, 0.5)),
+  },
+  "glsl-sdf-repeat-count": {
+    starter: (x, y) => countedDots(x, y, (px, py) => [endless(px), endless(py)]),
+    solution: (x, y) => countedDots(x, y, clampedCell([-2, -1], [2, 1])),
+  },
 };
 
 describe("shader lessons modelled on the grader's sample grid", () => {
@@ -1402,6 +1447,30 @@ const SHADER_NEAR_MISSES: Record<string, ReadonlyArray<readonly [string, Shade]>
     ["n: straight up", (x, y) => mirrorLesson(x, y, (p, n) => traceRay(v3add(p, v3scale(n, 0.01)), n))],
     ["mixed in fully (a perfect mirror)", (x, y) => mirrorLesson(x, y, mirrored, 1)],
   ],
+  // 2026-10, sixteenth batch.
+  "glsl-round-box": [
+    ["sdBox(p, b) - r (grown by r)", (x, y) => roundBox(x, y, (px, py) => sdBox(px, py, 0.66, 0.5) - 0.3)],
+    ["sdBox(p, b - r) (shrunk, still sharp)", (x, y) => roundBox(x, y, (px, py) => sdBox(px, py, 0.66 - 0.3, 0.5 - 0.3))],
+    ["sdBox(p, b + r) - r", (x, y) => roundBox(x, y, (px, py) => sdBox(px, py, 0.66 + 0.3, 0.5 + 0.3) - 0.3)],
+    ["sdBox(p, b - r) + r (shrunk twice)", (x, y) => roundBox(x, y, (px, py) => sdBox(px, py, 0.66 - 0.3, 0.5 - 0.3) + 0.3)],
+  ],
+  "glsl-sdf-morph": [
+    ["min (the union: the square)", (x, y) => morphed(x, y, Math.min)],
+    ["max (the intersection: the circle)", (x, y) => morphed(x, y, Math.max)],
+    ["mix(…, 0.2): mostly the circle", (x, y) => morphed(x, y, (c, sq) => mix(c, sq, 0.2))],
+    ["mix(…, 0.8): mostly the square", (x, y) => morphed(x, y, (c, sq) => mix(c, sq, 0.8))],
+    ["the square alone", (x, y) => morphed(x, y, (_c, sq) => sq)],
+  ],
+  "glsl-sdf-repeat-count": [
+    ["5 × 5 (the rows clamped like the columns)", (x, y) => countedDots(x, y, clampedCell([-2, -2], [2, 2]))],
+    ["x only (endless columns)", (x, y) => countedDots(x, y, (px, py) => [clampedCell([-2, -1], [2, 1])(px, py)[0], endless(py)])],
+    ["0 to 4 and 0 to 2 (shifted up and right)", (x, y) => countedDots(x, y, clampedCell([0, 0], [4, 2]))],
+    ["floor(p / s) without + 0.5 (quarter dots)", (x, y) => countedDots(x, y, clampedCell([-2, -1], [2, 1], 0))],
+    [
+      "clamp without floor (bars)",
+      (x, y) => countedDots(x, y, (px, py) => [px - DOT_STEP * clamp(px / DOT_STEP, -2, 2), py - DOT_STEP * clamp(py / DOT_STEP, -1, 1)]),
+    ],
+  ],
 };
 
 describe("shader near misses are rejected", () => {
@@ -1546,6 +1615,23 @@ const SHADER_VARIANTS: Record<string, ReadonlyArray<readonly [string, Shade]>> =
   ],
   "glsl-ambient-occlusion": [["w * (h - d)", (x, y) => occlusionLesson(x, y, (occ, h, d, w) => occ + w * (h - d))]],
   "glsl-reflection": [["rd - 2.0 * dot(n, rd) * n by hand", (x, y) => mirrorLesson(x, y, (p, n, rd) => traceRay(v3add(p, v3scale(n, 0.01)), v3add(rd, v3scale(n, -2 * v3dot(n, rd)))))]],
+  // 2026-10, sixteenth batch.
+  "glsl-round-box": [
+    [
+      "the box formula written out with b - r",
+      (x, y) =>
+        roundBox(x, y, (px, py) => {
+          const qx = Math.abs(px) - 0.66 + 0.3;
+          const qy = Math.abs(py) - 0.5 + 0.3;
+          return length(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - 0.3;
+        }),
+    ],
+  ],
+  "glsl-sdf-morph": [
+    ["mix(square, circle, 0.5)", (x, y) => morphed(x, y, (c, sq) => mix(sq, c, 0.5))],
+    ["(circle + square) * 0.5", (x, y) => morphed(x, y, (c, sq) => (c + sq) * 0.5)],
+  ],
+  "glsl-sdf-repeat-count": [["x and y clamped on separate lines", (x, y) => countedDots(x, y, clampedCell([-2, -1], [2, 1]))]],
 };
 
 describe("shader variants are accepted", () => {
@@ -2026,6 +2112,9 @@ const FLAT_LESSONS = [
   "three-lerp",
   "three-quaternion",
   "three-spherical",
+  "three-dot-view",
+  "three-cross-normal",
+  "three-reflect",
   "three-world-position",
   "three-attach",
   "three-matrix-order",
@@ -2159,6 +2248,11 @@ const LOWER_CURVE = "shape.quadraticCurveTo(0, -1.6, -1.6, 0);";
 const PIE_ARC = "shape.absarc(0, 0, 1.6, Math.PI * 0.75, Math.PI * 2.25, false);";
 const TO_CENTRE = "shape.lineTo(0, 0);";
 const HOLE_PUSH = "shape.holes.push(hole);";
+/** Lines of the sixteenth-batch scene solutions that the edits below change. */
+const IN_VIEW_LINE = "  if (facing.dot(toBall) > limit) ball.material.color.set('gold');";
+const TO_BALL_LINE = "  const toBall = ball.position.clone().sub(guard.position).normalize();";
+const NORMAL_LINE = "const n = new THREE.Vector3().crossVectors(a, b).normalize();";
+const BOUNCE_LINE = "const bounce = dir.clone().reflect(normal);";
 
 /** Plausible wrong answers to the 2026-10 (third to sixth batch) unlit scene
  *  lessons, as edits of the solution; each must be rejected at both preview
@@ -2445,6 +2539,32 @@ const SCENE_NEAR_MISSES: Record<string, ReadonlyArray<readonly [string, (solutio
     ],
     ["the hole as big as the plate", (s) => s.replace("hole.absarc(0, 0, 0.8,", "hole.absarc(0, 0, 1.6,")],
   ],
+  // 2026-10, sixteenth batch.
+  "three-dot-view": [
+    [
+      "compared with the angle, not its cos",
+      (s) => s.replace(IN_VIEW_LINE, "  if (facing.dot(toBall) > THREE.MathUtils.degToRad(25)) ball.material.color.set('gold');"),
+    ],
+    ["the direction not normalised", (s) => s.replace(TO_BALL_LINE, "  const toBall = ball.position.clone().sub(guard.position);")],
+    ["the comparison the wrong way round", (s) => s.replace(IN_VIEW_LINE, "  if (facing.dot(toBall) < limit) ball.material.color.set('gold');")],
+    ["Math.cos(25): 25 radians", (s) => s.replace(IN_VIEW_LINE, "  if (facing.dot(toBall) > Math.cos(25)) ball.material.color.set('gold');")],
+    ["the direction from the origin, not from the guard", (s) => s.replace(TO_BALL_LINE, "  const toBall = ball.position.clone().normalize();")],
+  ],
+  "three-cross-normal": [
+    ["b × a (the other side)", (s) => s.replace(NORMAL_LINE, "const n = new THREE.Vector3().crossVectors(b, a).normalize();")],
+    ["not normalised", (s) => s.replace(NORMAL_LINE, "const n = new THREE.Vector3().crossVectors(a, b);")],
+    ["a + b (cross in a comment)", (s) => s.replace(NORMAL_LINE, "const n = a.clone().add(b).normalize();  // cross")],
+    ["the edge b itself (cross in a comment)", (s) => s.replace(NORMAL_LINE, "const n = b.clone().normalize();  // cross")],
+  ],
+  "three-reflect": [
+    ["a normal of length √2", (s) => s.replace(BOUNCE_LINE, "const bounce = dir.clone().reflect(new THREE.Vector3(1, 1, 0));")],
+    ["straight back (reflect in a comment)", (s) => s.replace(BOUNCE_LINE, "const bounce = dir.clone().negate();  // reflect")],
+    ["the normal reflected in dir", (s) => s.replace(BOUNCE_LINE, "const bounce = normal.clone().reflect(dir);")],
+    [
+      "reflected in the mirror's surface, not its normal",
+      (s) => s.replace(BOUNCE_LINE, "const bounce = dir.clone().reflect(new THREE.Vector3(1, -1, 0).normalize());"),
+    ],
+  ],
 };
 
 /** Other correct ways to write the fifth- and sixth-batch unlit scene lessons;
@@ -2663,6 +2783,32 @@ const SCENE_VARIANTS: Record<string, ReadonlyArray<readonly [string, (solution: 
     ["holes = [hole]", (s) => s.replace(HOLE_PUSH, "shape.holes = [hole];")],
     ["a counter-clockwise hole", (s) => s.replace("hole.absarc(0, 0, 0.8, 0, Math.PI * 2, true);", "hole.absarc(0, 0, 0.8, 0, Math.PI * 2, false);")],
     ["a Shape as the hole", (s) => s.replace("const hole = new THREE.Path();", "const hole = new THREE.Shape();")],
+  ],
+  // 2026-10, sixteenth batch.
+  "three-dot-view": [
+    ["angleTo", (s) => s.replace(IN_VIEW_LINE, "  if (toBall.angleTo(facing) < THREE.MathUtils.degToRad(25)) ball.material.color.set('gold');")],
+    ["subVectors", (s) => s.replace(TO_BALL_LINE, "  const toBall = new THREE.Vector3().subVectors(ball.position, guard.position).normalize();")],
+    ["toBall.dot(facing) and a hex colour", (s) => s.replace(IN_VIEW_LINE, "  if (toBall.dot(facing) > limit) ball.material.color.set(0xffd700);")],
+  ],
+  "three-cross-normal": [
+    ["a.clone().cross(b)", (s) => s.replace(NORMAL_LINE, "const n = a.clone().cross(b).normalize();")],
+    ["the edges normalised first", (s) => s.replace(NORMAL_LINE, "const n = new THREE.Vector3().crossVectors(a.clone().normalize(), b.clone().normalize());")],
+    ["copy, scale, add", (s) => s.replace("marker.position.copy(center).addScaledVector(n, 1.6);", "marker.position.copy(n).multiplyScalar(1.6).add(center);")],
+  ],
+  "three-reflect": [
+    [
+      "the formula by hand (reflect in a comment)",
+      (s) => s.replace(BOUNCE_LINE, "const bounce = dir.clone().sub(normal.clone().multiplyScalar(2 * dir.dot(normal)));  // reflect"),
+    ],
+    ["copy then reflect", (s) => s.replace(BOUNCE_LINE, "const bounce = new THREE.Vector3().copy(dir).reflect(normal);")],
+    [
+      "the position set by hand",
+      (s) =>
+        s.replace(
+          "ball.position.copy(hit).addScaledVector(bounce, 1.6);",
+          "ball.position.set(hit.x + bounce.x * 1.6, hit.y + bounce.y * 1.6, hit.z + bounce.z * 1.6);",
+        ),
+    ],
   ],
 };
 

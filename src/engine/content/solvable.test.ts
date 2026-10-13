@@ -555,6 +555,20 @@ const lens = (x: number, y: number, scale = (px: number, py: number) => 1 + 1.5 
   return fromCorner ? checker(x * k, y * k) : checker(0.5 + px * k, 0.5 + py * k);
 };
 
+/** The graph lessons: plot()'s line density for a graph at height `fy`
+ *  (`line` from the distance, by default a line 0.04 thick). */
+const GRAPH_BG: RGB = [0.05, 0.07, 0.15];
+const GRAPH_LINE: RGB = [0.3, 1, 0.5];
+const lineAt = (d: number): number => 1 - smoothstep(0, 0.04, d);
+/** The y = x lesson: the line over the dark background, its density from
+ *  the signed distance st.y - x. */
+const diagonal = (x: number, y: number, density = (signed: number) => lineAt(Math.abs(signed))): RGB => mixRgb(GRAPH_BG, GRAPH_LINE, density(y - x));
+/** The curve lessons: brightness f(x), the graph of f drawn over it. */
+const graphOf = (x: number, y: number, f: (x: number) => number): RGB => {
+  const fy = f(x);
+  return mixRgb(grey(clamp(fy, 0, 1)), GRAPH_LINE, lineAt(Math.abs(y - fy)));
+};
+
 /** JS ports of (starter, solution) for the shader lessons added in 2026-10. */
 const SHADER_MODELS: Record<string, { starter: Shade; solution: Shade }> = {
   "glsl-repeat-dots": {
@@ -819,6 +833,19 @@ const SHADER_MODELS: Record<string, { starter: Shade; solution: Shade }> = {
     starter: (x, y) => checker(x, y),
     solution: (x, y) => lens(x, y),
   },
+  // 2026-10, eleventh batch.
+  "glsl-plot-line": {
+    starter: () => GRAPH_BG,
+    solution: (x, y) => diagonal(x, y),
+  },
+  "glsl-plot-pow": {
+    starter: (x, y) => graphOf(x, y, (v) => v),
+    solution: (x, y) => graphOf(x, y, (v) => Math.pow(v, 5)),
+  },
+  "glsl-plot-smoothstep": {
+    starter: (x, y) => graphOf(x, y, (v) => v),
+    solution: (x, y) => graphOf(x, y, (v) => smoothstep(0.2, 0.8, v)),
+  },
 };
 
 describe("shader lessons modelled on the grader's sample grid", () => {
@@ -1055,6 +1082,25 @@ const SHADER_NEAR_MISSES: Record<string, ReadonlyArray<readonly [string, Shade]>
     ["length(p) instead of dot(p, p)", (x, y) => lens(x, y, (px, py) => 1 + 1.5 * length(px, py))],
     ["scaled from the corner (0.5 not added back)", (x, y) => lens(x, y, undefined, true)],
   ],
+  // 2026-10, eleventh batch.
+  "glsl-plot-line": [
+    ["without abs (everything below the line green)", (x, y) => diagonal(x, y, (signed) => lineAt(signed))],
+    ["the smoothstep edges turned round (all but the line)", (x, y) => diagonal(x, y, (signed) => 1 - lineAt(Math.abs(signed)))],
+    ["a line 0.1 thick", (x, y) => diagonal(x, y, (signed) => 1 - smoothstep(0, 0.1, Math.abs(signed)))],
+    ["plot(st, st.y): every pixel on the graph", () => GRAPH_LINE],
+  ],
+  "glsl-plot-pow": [
+    ["pow(st.x, 2.0)", (x, y) => graphOf(x, y, (v) => v * v)],
+    ["pow(5.0, st.x): the arguments the other way round", (x, y) => graphOf(x, y, (v) => Math.pow(5, v))],
+    ["pow(st.x, 0.2)", (x, y) => graphOf(x, y, (v) => Math.pow(v, 0.2))],
+    ["5.0 * st.x", (x, y) => graphOf(x, y, (v) => 5 * v)],
+  ],
+  "glsl-plot-smoothstep": [
+    ["a straight ramp clamp((x - 0.2) / 0.6, 0.0, 1.0)", (x, y) => graphOf(x, y, (v) => clamp((v - 0.2) / 0.6, 0, 1))],
+    ["step(0.5, st.x)", (x, y) => graphOf(x, y, (v) => step(0.5, v))],
+    ["smoothstep(0.8, 0.2, st.x): falling", (x, y) => graphOf(x, y, (v) => smoothstep(0.8, 0.2, v))],
+    ["smoothstep(0.0, 1.0, st.x)", (x, y) => graphOf(x, y, (v) => smoothstep(0, 1, v))],
+  ],
 };
 
 describe("shader near misses are rejected", () => {
@@ -1149,6 +1195,22 @@ const SHADER_VARIANTS: Record<string, ReadonlyArray<readonly [string, Shade]>> =
   "glsl-wave-distort": [["uv = vec2(uv.x + 0.04 * sin(uv.y * 25.0), uv.y)", (x, y) => warped(x, y, (u, v) => [u + 0.04 * Math.sin(v * 25), v])]],
   "glsl-ripple": [["uv = 0.5 + dir * (1.0 + 0.15 * sin(length(dir) * 40.0))", (x, y) => ripple(x, y)]],
   "glsl-lens": [["uv = 0.5 + p + p * 1.5 * dot(p, p)", (x, y) => lens(x, y)]],
+  // 2026-10, eleventh batch.
+  "glsl-plot-line": [
+    ["step(abs(st.y - y), 0.04): a hard edge", (x, y) => diagonal(x, y, (signed) => step(Math.abs(signed), 0.04))],
+    ["smoothstep(0.04, 0.0, abs(st.y - y))", (x, y) => diagonal(x, y)],
+  ],
+  "glsl-plot-pow": [["st.x * st.x * st.x * st.x * st.x", (x, y) => graphOf(x, y, (v) => v * v * v * v * v)]],
+  "glsl-plot-smoothstep": [
+    [
+      "t * t * (3.0 - 2.0 * t) written out",
+      (x, y) =>
+        graphOf(x, y, (v) => {
+          const t = clamp((v - 0.2) / 0.6, 0, 1);
+          return t * t * (3 - 2 * t);
+        }),
+    ],
+  ],
 };
 
 describe("shader variants are accepted", () => {
@@ -1482,7 +1544,8 @@ function flatRender({ scene, camera, renderer }: SceneRun, aspect: number): Samp
   const points: THREE.Points[] = [];
   let shadable = true;
   scene.traverse((o) => {
-    if (o === scene || o instanceof THREE.Group || o instanceof THREE.Light) return;
+    // Groups, lights and plain Object3Ds (empty markers) draw nothing themselves.
+    if (o === scene || o instanceof THREE.Group || o instanceof THREE.Light || o.constructor === THREE.Object3D) return;
     const material = (o as THREE.Mesh).material;
     if ((o instanceof THREE.Mesh || o instanceof THREE.Points || o instanceof THREE.Sprite) && !Array.isArray(material)) {
       shadable &&= flatShadable(material, directLit) && vertexColoursKnown(o, material);
@@ -1628,6 +1691,9 @@ const FLAT_LESSONS = [
   "three-lerp",
   "three-quaternion",
   "three-spherical",
+  "three-world-position",
+  "three-attach",
+  "three-matrix-order",
   "three-camera-back",
   "three-camera-angle",
   "three-camera-fov",
@@ -1723,6 +1789,10 @@ const INFLUENCE_LINE = "shape.morphTargetInfluences[0] = 1;";
 const NEAREST_LINE = "tex.magFilter = THREE.NearestFilter;  // 拡大するとき、いちばん近いピクセルの色をそのまま使う\n";
 const MIRRORED_LINE = "tex.wrapS = THREE.MirroredRepeatWrapping;  // 1つおきに左右を反転してくり返す\n";
 const HEART_MATERIAL = "{ map: tex, alphaTest: 0.5 }";
+/** Lines of the eleventh-batch scene solutions that the edits below change. */
+const WORLD_LINE = "tip.getWorldPosition(flag.position);";
+const ATTACH_LINE = "turntable.attach(ball);";
+const ORDER_LINE = "m.multiplyMatrices(rotate, move);";
 
 /** Plausible wrong answers to the 2026-10 (third to sixth batch) unlit scene
  *  lessons, as edits of the solution; each must be rejected at both preview
@@ -1900,6 +1970,22 @@ const SCENE_NEAR_MISSES: Record<string, ReadonlyArray<readonly [string, (solutio
     ["alphaTest on the texture", (s) => s.replace(HEART_MATERIAL, "{ map: tex }").replace("scene.add(heart);", "scene.add(heart);\ntex.alphaTest = 0.5;")],
     ["alphaTest 1.5 (every pixel discarded)", (s) => s.replace(HEART_MATERIAL, "{ map: tex, alphaTest: 1.5 }")],
   ],
+  // 2026-10, eleventh batch.
+  "three-world-position": [
+    ["the tip's local position", (s) => s.replace(WORLD_LINE, "flag.position.copy(tip.position);  // getWorldPosition")],
+    ["the local position plus the arm's (its turn left out)", (s) => s.replace(WORLD_LINE, "flag.position.copy(tip.position).add(arm.position);  // getWorldPosition")],
+    ["the arm's world position (its base)", (s) => s.replace(WORLD_LINE, "arm.getWorldPosition(flag.position);")],
+    ["computed but not used", (s) => s.replace(WORLD_LINE, "tip.getWorldPosition(new THREE.Vector3());")],
+  ],
+  "three-attach": [
+    ["add (the ball jumps)", (s) => s.replace(ATTACH_LINE, "turntable.add(ball);  // attach")],
+    ["worldToLocal and add (the position kept, the size halved)", (s) => s.replace(ATTACH_LINE, "turntable.worldToLocal(ball.position);\nturntable.add(ball);")],
+  ],
+  "three-matrix-order": [
+    ["move × rotate (turned first, then moved)", (s) => s.replace(ORDER_LINE, "m.multiplyMatrices(move, rotate);")],
+    ["copy(move).multiply(rotate)", (s) => s.replace(ORDER_LINE, "m.copy(move).multiply(rotate);")],
+    ["copy(rotate).premultiply(move)", (s) => s.replace(ORDER_LINE, "m.copy(rotate).premultiply(move);")],
+  ],
 };
 
 /** Other correct ways to write the fifth- and sixth-batch unlit scene lessons;
@@ -2026,6 +2112,25 @@ const SCENE_VARIANTS: Record<string, ReadonlyArray<readonly [string, (solution: 
     ["transparent: true", (s) => s.replace(HEART_MATERIAL, "{ map: tex, transparent: true }")],
     ["alphaTest 0.1", (s) => s.replace(HEART_MATERIAL, "{ map: tex, alphaTest: 0.1 }")],
     ["alphaTest set on the material afterwards", (s) => s.replace(HEART_MATERIAL, "{ map: tex }").replace("scene.add(heart);", "scene.add(heart);\nheart.material.alphaTest = 0.5;")],
+  ],
+  // 2026-10, eleventh batch.
+  "three-world-position": [
+    ["copy of getWorldPosition(new Vector3())", (s) => s.replace(WORLD_LINE, "flag.position.copy(tip.getWorldPosition(new THREE.Vector3()));")],
+    ["localToWorld of the tip's origin", (s) => s.replace(WORLD_LINE, "flag.position.set(0, 0, 0);\ntip.localToWorld(flag.position);")],
+    ["the arm's localToWorld of the tip's position", (s) => s.replace(WORLD_LINE, "arm.localToWorld(flag.position.copy(tip.position));")],
+    ["updateMatrixWorld, then setFromMatrixPosition", (s) => s.replace(WORLD_LINE, "arm.updateMatrixWorld();\nflag.position.setFromMatrixPosition(tip.matrixWorld);")],
+  ],
+  "three-attach": [
+    [
+      "the inverse world matrix applied, then add",
+      (s) =>
+        s.replace(ATTACH_LINE, "turntable.updateMatrixWorld();\nball.applyMatrix4(turntable.matrixWorld.clone().invert());\nturntable.add(ball);"),
+    ],
+  ],
+  "three-matrix-order": [
+    ["copy(rotate).multiply(move)", (s) => s.replace(ORDER_LINE, "m.copy(rotate).multiply(move);")],
+    ["copy(move).premultiply(rotate)", (s) => s.replace(ORDER_LINE, "m.copy(move).premultiply(rotate);")],
+    ["multiply(rotate).multiply(move) on the identity", (s) => s.replace(ORDER_LINE, "m.multiply(rotate).multiply(move);")],
   ],
 };
 

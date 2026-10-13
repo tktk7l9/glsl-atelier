@@ -120,6 +120,18 @@ export const TRACKS: readonly TrackMeta[] = [
     ],
   },
   {
+    id: "glsl-sdf-ops",
+    domain: "glsl",
+    title: "距離関数を使いこなす",
+    summary: "距離から半径を引いて角を丸め、2つの形の距離を混ぜて中間の形を作り、点の番号を clamp で区切って数を決めて並べる。",
+    icon: "🔘",
+    lessons: [
+      { id: "glsl-round-box", title: "角を丸める: 距離から半径を引く" },
+      { id: "glsl-sdf-morph", title: "中間の形: 2つの距離を混ぜる" },
+      { id: "glsl-sdf-repeat-count", title: "数を決めて並べる: 番号を clamp で区切る" },
+    ],
+  },
+  {
     id: "glsl-transform",
     domain: "glsl",
     title: "座標を変換する",
@@ -389,6 +401,18 @@ export const TRACKS: readonly TrackMeta[] = [
     ],
   },
   {
+    id: "three-vector",
+    domain: "three",
+    title: "ベクトルで判断する（内積・外積・反射）",
+    summary: "内積で視界に入っているかを調べ、外積で面に垂直な向きを作り、reflect で跳ね返る向きを求める。",
+    icon: "🔦",
+    lessons: [
+      { id: "three-dot-view", title: "視界に入っているか: 内積" },
+      { id: "three-cross-normal", title: "面に垂直な向き: 外積" },
+      { id: "three-reflect", title: "跳ね返る向き: reflect" },
+    ],
+  },
+  {
     id: "three-space",
     domain: "three",
     title: "ローカル座標とワールド座標",
@@ -615,6 +639,7 @@ const LOADERS: Readonly<Record<string, () => Promise<{ readonly track: Track }>>
   "glsl-patterns": () => import("./tracks/glsl-patterns.js"),
   "glsl-sdf": () => import("./tracks/glsl-sdf.js"),
   "glsl-lines": () => import("./tracks/glsl-lines.js"),
+  "glsl-sdf-ops": () => import("./tracks/glsl-sdf-ops.js"),
   "glsl-transform": () => import("./tracks/glsl-transform.js"),
   "glsl-polar": () => import("./tracks/glsl-polar.js"),
   "glsl-hsv": () => import("./tracks/glsl-hsv.js"),
@@ -636,6 +661,7 @@ const LOADERS: Readonly<Record<string, () => Promise<{ readonly track: Track }>>
   "three-light": () => import("./tracks/three-light.js"),
   "three-transform": () => import("./tracks/three-transform.js"),
   "three-math": () => import("./tracks/three-math.js"),
+  "three-vector": () => import("./tracks/three-vector.js"),
   "three-space": () => import("./tracks/three-space.js"),
   "three-camera": () => import("./tracks/three-camera.js"),
   "three-box": () => import("./tracks/three-box.js"),

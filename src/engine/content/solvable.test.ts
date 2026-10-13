@@ -778,6 +778,33 @@ const clampedCell =
   ];
 const endless = (v: number): number => glslMod(v + DOT_STEP * 0.5, DOT_STEP) - DOT_STEP * 0.5;
 
+/** The soft-lighting lessons' sphere: radius 0.75 seen head-on, black around
+ *  it; `shade(n, P)` colours a point of it from its normal and position. */
+function softSphere(x: number, y: number, shade: (n: V3, P: V3) => RGB): RGB {
+  const [px, py] = centred(x, y);
+  const d = length(px, py);
+  if (d >= 0.75) return [0, 0, 0];
+  const P: V3 = [px, py, Math.sqrt(0.75 * 0.75 - d * d)];
+  return shade(v3norm(P), P);
+}
+const SKY_LIGHT: RGB = [0.45, 0.65, 1];
+const GROUND_LIGHT: RGB = [0.45, 0.3, 0.15];
+const hemisphere = (x: number, y: number, t: (n: V3) => number, from: RGB = GROUND_LIGHT, to: RGB = SKY_LIGHT): RGB =>
+  softSphere(x, y, (n) => mixRgb(from, to, t(n)));
+const UPPER_LEFT = v3norm([-0.6, 0.6, 0.5]);
+const SOFT_ORANGE: RGB = [1, 0.55, 0.25];
+const halfLambert = (x: number, y: number, diff: (ndl: number) => number): RGB =>
+  softSphere(x, y, (n) => rgb(SOFT_ORANGE.map((c) => c * diff(v3dot(n, UPPER_LEFT)))));
+const BULB_POS: V3 = [-0.9, 0.7, 0.9];
+const BULB_WARM: RGB = [1, 0.85, 0.6];
+const bulbLit = (x: number, y: number, atten: (dist: number, toLight: V3) => number): RGB =>
+  softSphere(x, y, (n, P) => {
+    const toLight = v3add(BULB_POS, v3scale(P, -1));
+    const dist = Math.hypot(toLight[0], toLight[1], toLight[2]);
+    const diff = Math.max(v3dot(n, v3norm(toLight)), 0);
+    return rgb(BULB_WARM.map((c) => c * diff * atten(dist, toLight) * 2));
+  });
+
 const SHADER_MODELS: Record<string, { starter: Shade; solution: Shade }> = {
   "glsl-repeat-dots": {
     starter: (x, y) => grey(1 - step(0.3, length(x - 0.5, y - 0.5))),
@@ -1121,6 +1148,19 @@ const SHADER_MODELS: Record<string, { starter: Shade; solution: Shade }> = {
   "glsl-sdf-repeat-count": {
     starter: (x, y) => countedDots(x, y, (px, py) => [endless(px), endless(py)]),
     solution: (x, y) => countedDots(x, y, clampedCell([-2, -1], [2, 1])),
+  },
+  // 2026-10, seventeenth batch.
+  "glsl-hemisphere": {
+    starter: (x, y) => softSphere(x, y, () => rgb(SKY_LIGHT.map((c) => c * 0.7))),
+    solution: (x, y) => hemisphere(x, y, (n) => n[1] * 0.5 + 0.5),
+  },
+  "glsl-half-lambert": {
+    starter: (x, y) => halfLambert(x, y, (ndl) => Math.max(ndl, 0)),
+    solution: (x, y) => halfLambert(x, y, (ndl) => (ndl * 0.5 + 0.5) ** 2),
+  },
+  "glsl-light-falloff": {
+    starter: (x, y) => bulbLit(x, y, () => 1),
+    solution: (x, y) => bulbLit(x, y, (dist) => 1 / (1 + 2 * dist * dist)),
   },
 };
 
@@ -1471,6 +1511,24 @@ const SHADER_NEAR_MISSES: Record<string, ReadonlyArray<readonly [string, Shade]>
       (x, y) => countedDots(x, y, (px, py) => [px - DOT_STEP * clamp(px / DOT_STEP, -2, 2), py - DOT_STEP * clamp(py / DOT_STEP, -1, 1)]),
     ],
   ],
+  // 2026-10, seventeenth batch.
+  "glsl-hemisphere": [
+    ["n.y without * 0.5 + 0.5", (x, y) => hemisphere(x, y, (n) => n[1])],
+    ["sky and ground swapped", (x, y) => hemisphere(x, y, (n) => n[1] * 0.5 + 0.5, SKY_LIGHT, GROUND_LIGHT)],
+    ["n.x (left to right)", (x, y) => hemisphere(x, y, (n) => n[0] * 0.5 + 0.5)],
+    ["n.z (middle to edge)", (x, y) => hemisphere(x, y, (n) => n[2] * 0.5 + 0.5)],
+  ],
+  "glsl-half-lambert": [
+    ["ndl * 0.5 + 0.5 without the square", (x, y) => halfLambert(x, y, (ndl) => ndl * 0.5 + 0.5)],
+    ["max(ndl, 0.0) * 0.5 + 0.5", (x, y) => halfLambert(x, y, (ndl) => Math.max(ndl, 0) * 0.5 + 0.5)],
+    ["ndl + 1.0 (not halved)", (x, y) => halfLambert(x, y, (ndl) => ndl + 1)],
+  ],
+  "glsl-light-falloff": [
+    ["1.0 / (dist * dist): without 1.0 +", (x, y) => bulbLit(x, y, (dist) => 1 / (dist * dist))],
+    ["1.0 / (1.0 + 2.0 * dist): linear", (x, y) => bulbLit(x, y, (dist) => 1 / (1 + 2 * dist))],
+    ["1.0 - dist * 0.5", (x, y) => bulbLit(x, y, (dist) => 1 - dist * 0.5)],
+    ["dist itself", (x, y) => bulbLit(x, y, (dist) => dist)],
+  ],
 };
 
 describe("shader near misses are rejected", () => {
@@ -1632,6 +1690,29 @@ const SHADER_VARIANTS: Record<string, ReadonlyArray<readonly [string, Shade]>> =
     ["(circle + square) * 0.5", (x, y) => morphed(x, y, (c, sq) => (c + sq) * 0.5)],
   ],
   "glsl-sdf-repeat-count": [["x and y clamped on separate lines", (x, y) => countedDots(x, y, clampedCell([-2, -1], [2, 1]))]],
+  // 2026-10, seventeenth batch.
+  "glsl-hemisphere": [
+    ["(n.y + 1.0) * 0.5", (x, y) => hemisphere(x, y, (n) => (n[1] + 1) * 0.5)],
+    [
+      "ground * (1.0 - t) + sky * t",
+      (x, y) =>
+        softSphere(x, y, (n) => {
+          const t = n[1] * 0.5 + 0.5;
+          return rgb(GROUND_LIGHT.map((g, i) => g * (1 - t) + SKY_LIGHT[i] * t));
+        }),
+    ],
+  ],
+  "glsl-half-lambert": [
+    [
+      "h * h",
+      (x, y) =>
+        halfLambert(x, y, (ndl) => {
+          const h = ndl * 0.5 + 0.5;
+          return h * h;
+        }),
+    ],
+  ],
+  "glsl-light-falloff": [["dot(toLight, toLight) for the square", (x, y) => bulbLit(x, y, (_d, toLight) => 1 / (1 + 2 * v3dot(toLight, toLight)))]],
 };
 
 describe("shader variants are accepted", () => {
@@ -2109,6 +2190,9 @@ const FLAT_LESSONS = [
   "three-look-at",
   "three-instanced",
   "three-instance-color",
+  "three-pivot-hinge",
+  "three-pivot-root",
+  "three-pivot-center",
   "three-lerp",
   "three-quaternion",
   "three-spherical",
@@ -2253,6 +2337,12 @@ const IN_VIEW_LINE = "  if (facing.dot(toBall) > limit) ball.material.color.set(
 const TO_BALL_LINE = "  const toBall = ball.position.clone().sub(guard.position).normalize();";
 const NORMAL_LINE = "const n = new THREE.Vector3().crossVectors(a, b).normalize();";
 const BOUNCE_LINE = "const bounce = dir.clone().reflect(normal);";
+/** Lines of the seventeenth-batch scene solutions that the edits below change. */
+const HINGE_TURN = "hinge.rotation.x = -Math.PI / 3;";
+const ROOT_SHIFT = "bladeGeo.translate(0, 1.0, 0);";
+const BLADE_PLACE = "  blade.position.set(0, -0.2, i * 0.02);";
+const CENTRE_CALL = "geo.center();";
+const TURN_UP = "arrow.rotation.z = Math.PI / 2;";
 
 /** Plausible wrong answers to the 2026-10 (third to sixth batch) unlit scene
  *  lessons, as edits of the solution; each must be rejected at both preview
@@ -2565,6 +2655,24 @@ const SCENE_NEAR_MISSES: Record<string, ReadonlyArray<readonly [string, (solutio
       (s) => s.replace(BOUNCE_LINE, "const bounce = dir.clone().reflect(new THREE.Vector3(1, -1, 0).normalize());"),
     ],
   ],
+  // 2026-10, seventeenth batch (each keeps a pivot token, so only the
+  // picture decides).
+  "three-pivot-hinge": [
+    ["the board turned, not the hinge", (s) => s.replace(HINGE_TURN, "board.rotation.x = -Math.PI / 3;")],
+    ["the board above the hinge", (s) => s.replace("board.position.y = -0.8;", "board.position.y = 0.8;")],
+    ["the hinge at the board's middle", (s) => s.replace("hinge.position.y = 1.2;", "hinge.position.y = 0.4;").replace("board.position.y = -0.8;", "board.position.y = 0;")],
+    ["turned about y (sideways)", (s) => s.replace(HINGE_TURN, "hinge.rotation.y = -Math.PI / 3;")],
+  ],
+  "three-pivot-root": [
+    ["the mesh moved instead", (s) => s.replace(ROOT_SHIFT, "// instead of .translate()").replace(BLADE_PLACE, "  blade.position.set(0, 0.8, i * 0.02);")],
+    ["shifted by the whole length", (s) => s.replace(ROOT_SHIFT, "bladeGeo.translate(0, 2.0, 0);")],
+    ["shifted sideways", (s) => s.replace(ROOT_SHIFT, "bladeGeo.translate(1.0, 0, 0);")],
+  ],
+  "three-pivot-center": [
+    ["the mesh moved instead", (s) => s.replace(CENTRE_CALL, "// instead of center()").replace(TURN_UP, "arrow.position.set(-1.2, -1, 0);\n" + TURN_UP)],
+    ["translated the wrong way", (s) => s.replace(CENTRE_CALL, "geo.translate(1.2, 1, 0);")],
+    ["the geometry turned, not centred", (s) => s.replace(CENTRE_CALL, "geo.rotateZ(Math.PI / 2);  // instead of center()").replace(TURN_UP, "// already turned")],
+  ],
 };
 
 /** Other correct ways to write the fifth- and sixth-batch unlit scene lessons;
@@ -2809,6 +2917,39 @@ const SCENE_VARIANTS: Record<string, ReadonlyArray<readonly [string, (solution: 
           "ball.position.set(hit.x + bounce.x * 1.6, hit.y + bounce.y * 1.6, hit.z + bounce.z * 1.6);",
         ),
     ],
+  ],
+  // 2026-10, seventeenth batch.
+  "three-pivot-hinge": [
+    ["opened the other way (+60°)", (s) => s.replace(HINGE_TURN, "hinge.rotation.x = Math.PI / 3;")],
+    ["an Object3D as the hinge", (s) => s.replace("const hinge = new THREE.Group();", "const hinge = new THREE.Object3D();")],
+    [
+      "the board's shape moved instead (translate)",
+      (s) =>
+        s.slice(0, s.indexOf("const hinge = new THREE.Group();")) +
+        "board.geometry.translate(0, -0.8, 0);  // 上のふちを原点に\nboard.position.y = 1.2;\nscene.add(board);\nboard.rotation.x = -Math.PI / 3;\n",
+    ],
+  ],
+  "three-pivot-root": [
+    ["shifted down instead (-1.0)", (s) => s.replace(ROOT_SHIFT, "bladeGeo.translate(0, -1.0, 0);")],
+    ["applyMatrix4 with a translation", (s) => s.replace(ROOT_SHIFT, "bladeGeo.applyMatrix4(new THREE.Matrix4().makeTranslation(0, 1.0, 0));")],
+    [
+      "a pivot group per blade",
+      (s) =>
+        s
+          .replace(ROOT_SHIFT, "")
+          .replace(
+            /  blade\.position\.set\(0, -0\.2, i \* 0\.02\);[^\n]*\n  blade\.rotation\.z = \(i \* Math\.PI\) \/ 2;\n  scene\.add\(blade\);\n/,
+            "  const pivot = new THREE.Group();\n  pivot.position.set(0, -0.2, i * 0.02);\n  pivot.rotation.z = (i * Math.PI) / 2;\n  scene.add(pivot);\n  blade.position.y = 1.0;\n  pivot.add(blade);\n",
+          ),
+    ],
+  ],
+  "three-pivot-center": [
+    ["translate by half the size", (s) => s.replace(CENTRE_CALL, "geo.translate(-1.2, -1, 0);")],
+    [
+      "the bounding box's centre",
+      (s) => s.replace(CENTRE_CALL, "geo.computeBoundingBox();\nconst c = new THREE.Vector3();\ngeo.boundingBox.getCenter(c);\ngeo.translate(-c.x, -c.y, -c.z);"),
+    ],
+    ["center() after making the mesh", (s) => s.replace(CENTRE_CALL, "").replace("scene.add(arrow);", "scene.add(arrow);\ngeo.center();")],
   ],
 };
 

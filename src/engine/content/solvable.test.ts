@@ -510,6 +510,32 @@ const escapeColour = (n: number | null): RGB => (n === null ? [0, 0, 0] : cosine
 /** Counting before the escape test: one more, and 64 (black) for the last step. */
 const countedFirst = (n: number | null): number | null => (n === null || n + 1 >= 64 ? null : n + 1);
 
+/** The HSV lessons' hsv2rgb: each channel a trapezoid wave of the hue (the
+ *  offsets `k`), mixed with white by the saturation and scaled by the value. */
+function hsv2rgb(h: number, s: number, v: number, k: readonly number[] = [0, 4, 2], minus = 1, times = 6): RGB {
+  return rgb(k.map((o) => v * mix(1, clamp(Math.abs(glslMod(h * times + o, 6) - 3) - minus, 0, 1), s)));
+}
+/** The lessons' rgb2hsv (the largest channel picks the hue's sector). */
+function rgb2hsv([r, g, b]: RGB): [number, number, number] {
+  const mx = Math.max(r, g, b);
+  const d = mx - Math.min(r, g, b);
+  let h = 0;
+  if (d > 0) h = mx === r ? glslMod((g - b) / d, 6) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return [h / 6, mx > 0 ? d / mx : 0, mx];
+}
+/** The colour wheel: `hue` from the centred point, saturation `sat(r)`,
+ *  black outside radius 1 unless `masked` is false. */
+function colourWheel(x: number, y: number, hue = (px: number, py: number) => Math.atan2(py, px) / 6.2832, sat = (r: number) => r, masked = true): RGB {
+  const [px, py] = centred(x, y);
+  const r = length(px, py);
+  return rgb(hsv2rgb(hue(px, py), sat(r), 1).map((c) => (masked ? c * step(r, 1) : c)));
+}
+/** The picture with its HSV changed by `change`, converted back. */
+const hueShifted = (x: number, y: number, change: (hsv: [number, number, number]) => [number, number, number]): RGB => {
+  const [h, s, v] = change(rgb2hsv(picture(x, y)));
+  return hsv2rgb(h, s, v);
+};
+
 /** JS ports of (starter, solution) for the shader lessons added in 2026-10. */
 const SHADER_MODELS: Record<string, { starter: Shade; solution: Shade }> = {
   "glsl-repeat-dots": {
@@ -748,6 +774,19 @@ const SHADER_MODELS: Record<string, { starter: Shade; solution: Shade }> = {
     starter: (x, y) => escapeColour(mandelbrotSteps(x, y)),
     solution: (x, y) => escapeColour(juliaSteps(x, y)),
   },
+  // 2026-10, ninth batch.
+  "glsl-hsv-rainbow": {
+    starter: () => grey(1),
+    solution: (x) => hsv2rgb(x, 1, 1),
+  },
+  "glsl-color-wheel": {
+    starter: () => grey(0),
+    solution: (x, y) => colourWheel(x, y),
+  },
+  "glsl-hue-shift": {
+    starter: (x, y) => picture(x, y),
+    solution: (x, y) => hueShifted(x, y, ([h, s, v]) => [fract(h + 0.5), s, v]),
+  },
 };
 
 describe("shader lessons modelled on the grader's sample grid", () => {
@@ -942,6 +981,31 @@ const SHADER_NEAR_MISSES: Record<string, ReadonlyArray<readonly [string, Shade]>
     ["z from 0 with c fixed", () => escapeColour(escapeCount(JULIA_C[0], JULIA_C[1], 0, 0))],
     ["z = p (without * 1.5)", (x, y) => escapeColour(juliaSteps(x, y, JULIA_C, 1))],
   ],
+  // 2026-10, ninth batch.
+  "glsl-hsv-rainbow": [
+    ["the offsets (0, 2, 4): the hues the other way round", (x) => hsv2rgb(x, 1, 1, [0, 2, 4])],
+    ["without - 1.0 (pale)", (x) => hsv2rgb(x, 1, 1, [0, 4, 2], 0)],
+    ["the hue not times 6", (x) => hsv2rgb(x, 1, 1, [0, 4, 2], 1, 1)],
+  ],
+  "glsl-color-wheel": [
+    ["atan(p.x, p.y): from the top, the other way round", (x, y) => colourWheel(x, y, (px, py) => Math.atan2(px, py) / 6.2832)],
+    ["the angle in radians (not / 6.2832)", (x, y) => colourWheel(x, y, (px, py) => Math.atan2(py, px))],
+    ["saturation 1 - r (a white rim)", (x, y) => colourWheel(x, y, undefined, (r) => 1 - r)],
+    ["+ 0.5 (red on the left)", (x, y) => colourWheel(x, y, (px, py) => Math.atan2(py, px) / 6.2832 + 0.5)],
+    ["no black outside the circle", (x, y) => colourWheel(x, y, undefined, undefined, false)],
+  ],
+  "glsl-hue-shift": [
+    ["1.0 - col (the negative)", (x, y) => rgb(picture(x, y).map((c) => 1 - c))],
+    ["a quarter turn (+ 0.25)", (x, y) => hueShifted(x, y, ([h, s, v]) => [fract(h + 0.25), s, v])],
+    ["the saturation shifted instead", (x, y) => hueShifted(x, y, ([h, s, v]) => [h, fract(s + 0.5), v])],
+    [
+      "the HSV shown without converting back",
+      (x, y) => {
+        const [h, s, v] = rgb2hsv(picture(x, y));
+        return [fract(h + 0.5), s, v];
+      },
+    ],
+  ],
 };
 
 describe("shader near misses are rejected", () => {
@@ -1016,6 +1080,21 @@ const SHADER_VARIANTS: Record<string, ReadonlyArray<readonly [string, Shade]>> =
   "glsl-julia": [
     ["n counted before the escape test", (x, y) => escapeColour(countedFirst(juliaSteps(x, y)))],
     ["c declared const", (x, y) => escapeColour(juliaSteps(x, y))],
+  ],
+  // 2026-10, ninth batch.
+  "glsl-hsv-rainbow": [["the fract form: abs(fract(h + vec3(1.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0)", (x) => hsv2rgb(x, 1, 1)]],
+  "glsl-color-wheel": [["fract(atan(p.y, p.x) / 6.2832)", (x, y) => colourWheel(x, y, (px, py) => fract(Math.atan2(py, px) / 6.2832))]],
+  "glsl-hue-shift": [
+    ["+ 0.5 without fract", (x, y) => hueShifted(x, y, ([h, s, v]) => [h + 0.5, s, v])],
+    ["- 0.5", (x, y) => hueShifted(x, y, ([h, s, v]) => [h - 0.5, s, v])],
+    [
+      "max + min - col (the same in RGB)",
+      (x, y) => {
+        const c = picture(x, y);
+        const sum = Math.max(...c) + Math.min(...c);
+        return rgb(c.map((v) => sum - v));
+      },
+    ],
   ],
 };
 
@@ -1480,6 +1559,9 @@ const FLAT_LESSONS = [
   "three-uv",
   "three-texture-atlas",
   "three-texture-rotation",
+  "three-wave",
+  "three-height-colors",
+  "three-morph",
   "three-lathe",
   "three-extrude",
   "three-tube",
@@ -1542,6 +1624,13 @@ const ROTATION_ANGLE = "tex.rotation = Math.PI / 2;  // 反時計回りに 90°�
 const LERP_LINE = "ball.position.lerpVectors(a, b, 0.25);";
 const QUATERNION_LINE = "arms.quaternion.setFromAxisAngle(axis, Math.PI * 2 / 3);";
 const SPHERICAL_LINE = "marker.position.setFromSphericalCoords(2, Math.PI / 3, Math.PI / 6);";
+/** Lines of the ninth-batch scene solutions that the edits below change. */
+const WAVE_LINE = "pos.setZ(i, 0.3 * Math.sin(y * 3));";
+const NORMALS_LINE = "geo.computeVertexNormals();  // 動かしたあとの面の向きを計算し直す\n";
+const MIX_LINE = "c.lerpColors(low, high, (h + 1) / 2);";
+const WRITE_LINE = "c.toArray(colors, i * 3);";
+const MORPH_TARGET_LINE = "geo.morphAttributes.position = [new THREE.Float32BufferAttribute(star, 3)];";
+const INFLUENCE_LINE = "shape.morphTargetInfluences[0] = 1;";
 
 /** Plausible wrong answers to the 2026-10 (third to sixth batch) unlit scene
  *  lessons, as edits of the solution; each must be rejected at both preview
@@ -1682,6 +1771,27 @@ const SCENE_NEAR_MISSES: Record<string, ReadonlyArray<readonly [string, (solutio
         ),
     ],
   ],
+  // 2026-10, ninth batch.
+  "three-wave": [
+    ["the normals never recomputed", (s) => s.replace(NORMALS_LINE, "// computeVertexNormals\n")],
+    ["the normals computed before the vertices move", (s) => s.replace(NORMALS_LINE, "").replace("const pos = geo.attributes.position;", "geo.computeVertexNormals();\nconst pos = geo.attributes.position;")],
+    ["the wave along x", (s) => s.replace(WAVE_LINE, "pos.setZ(i, 0.3 * Math.sin(pos.getX(i) * 3));")],
+    ["setY instead of setZ (moved within the board)", (s) => s.replace(WAVE_LINE, "pos.setY(i, y + 0.3 * Math.sin(y * 3));")],
+    ["an amplitude of 3", (s) => s.replace(WAVE_LINE, "pos.setZ(i, 3 * Math.sin(y * 3));")],
+  ],
+  "three-height-colors": [
+    ["h itself as the ratio (not 0 to 1)", (s) => s.replace(MIX_LINE, "c.lerpColors(low, high, h);")],
+    ["low and high the other way round", (s) => s.replace(MIX_LINE, "c.lerpColors(high, low, (h + 1) / 2);")],
+    ["written at i, not i * 3", (s) => s.replace(WRITE_LINE, "c.toArray(colors, i);")],
+    ["without vertexColors", (s) => s.replace("{ vertexColors: true }", "{ color: 'white' } /* vertexColors */")],
+  ],
+  "three-morph": [
+    ["an influence of 0.5 (halfway)", (s) => s.replace(INFLUENCE_LINE, "shape.morphTargetInfluences[0] = 0.5;")],
+    [
+      "the morph target set after the mesh, without updateMorphTargets",
+      (s) => s.replace(MORPH_TARGET_LINE, "").replace("scene.add(shape);", "scene.add(shape);\n" + MORPH_TARGET_LINE),
+    ],
+  ],
 };
 
 /** Other correct ways to write the fifth- and sixth-batch unlit scene lessons;
@@ -1773,6 +1883,24 @@ const SCENE_VARIANTS: Record<string, ReadonlyArray<readonly [string, (solution: 
         ),
     ],
     ["the marker a child of the globe", (s) => s.replace("scene.add(marker);", "globe.add(marker);")],
+  ],
+  // 2026-10, ninth batch.
+  "three-wave": [
+    ["setXYZ", (s) => s.replace(WAVE_LINE, "pos.setXYZ(i, pos.getX(i), y, 0.3 * Math.sin(y * 3));")],
+    ["the array written directly", (s) => s.replace(WAVE_LINE, "pos.array[i * 3 + 2] = 0.3 * Math.sin(y * 3);")],
+  ],
+  "three-height-colors": [
+    ["copy(low).lerp(high, t)", (s) => s.replace(MIX_LINE, "c.copy(low).lerp(high, (h + 1) / 2);")],
+    ["colors.set([c.r, c.g, c.b], i * 3)", (s) => s.replace(WRITE_LINE, "colors.set([c.r, c.g, c.b], i * 3);")],
+    ["MathUtils.mapLinear for the ratio", (s) => s.replace(MIX_LINE, "c.lerpColors(low, high, THREE.MathUtils.mapLinear(h, -1, 1, 0, 1));")],
+  ],
+  "three-morph": [
+    ["fill(1)", (s) => s.replace(INFLUENCE_LINE, "shape.morphTargetInfluences.fill(1);")],
+    [
+      "the morph target set after the mesh, then updateMorphTargets()",
+      (s) => s.replace(MORPH_TARGET_LINE, "").replace("scene.add(shape);", "scene.add(shape);\n" + MORPH_TARGET_LINE + "\nshape.updateMorphTargets();"),
+    ],
+    ["a BufferAttribute over a Float32Array", (s) => s.replace("new THREE.Float32BufferAttribute(star, 3)", "new THREE.BufferAttribute(new Float32Array(star), 3)")],
   ],
 };
 

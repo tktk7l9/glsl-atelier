@@ -208,6 +208,18 @@ export const TRACKS: readonly TrackMeta[] = [
     ],
   },
   {
+    id: "glsl-glow",
+    domain: "glsl",
+    title: "光らせる（グロー）",
+    summary: "距離で割って中心ほど強く光らせ、線分の距離でネオン管にし、光を足し合わせてトーンマッピングで白飛びを抑える。",
+    icon: "🔆",
+    lessons: [
+      { id: "glsl-glow", title: "距離で光る: 1 / d のグロー" },
+      { id: "glsl-neon", title: "ネオン管: 線分の距離で光らせる" },
+      { id: "glsl-glow-add", title: "光を重ねる: 足し算とトーンマッピング" },
+    ],
+  },
+  {
     id: "glsl-filter",
     domain: "glsl",
     title: "フィルタで加工する",
@@ -498,6 +510,18 @@ export const TRACKS: readonly TrackMeta[] = [
     ],
   },
   {
+    id: "three-path",
+    domain: "three",
+    title: "曲線にそって置く",
+    summary: "曲線の上の位置を長さで測って取り出し（getPointAt）、等間隔に並べ（getSpacedPoints）、進む向き（getTangentAt）に向ける。",
+    icon: "🛤️",
+    lessons: [
+      { id: "three-curve-point", title: "曲線の上の位置: getPointAt" },
+      { id: "three-spaced-points", title: "等間隔に並べる: getSpacedPoints" },
+      { id: "three-curve-tangent", title: "進む向きに向ける: getTangentAt" },
+    ],
+  },
+  {
     id: "three-lines-sprites",
     domain: "three",
     title: "線とスプライト",
@@ -574,6 +598,7 @@ const LOADERS: Readonly<Record<string, () => Promise<{ readonly track: Track }>>
   "glsl-tiling": () => import("./tracks/glsl-tiling.js"),
   "glsl-fractal": () => import("./tracks/glsl-fractal.js"),
   "glsl-post": () => import("./tracks/glsl-post.js"),
+  "glsl-glow": () => import("./tracks/glsl-glow.js"),
   "glsl-filter": () => import("./tracks/glsl-filter.js"),
   "glsl-convolution": () => import("./tracks/glsl-convolution.js"),
   "glsl-distort": () => import("./tracks/glsl-distort.js"),
@@ -597,6 +622,7 @@ const LOADERS: Readonly<Record<string, () => Promise<{ readonly track: Track }>>
   "three-texture": () => import("./tracks/three-texture.js"),
   "three-deform": () => import("./tracks/three-deform.js"),
   "three-curves": () => import("./tracks/three-curves.js"),
+  "three-path": () => import("./tracks/three-path.js"),
   "three-lines-sprites": () => import("./tracks/three-lines-sprites.js"),
   "three-atmosphere": () => import("./tracks/three-atmosphere.js"),
 };

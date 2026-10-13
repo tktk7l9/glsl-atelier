@@ -259,6 +259,18 @@ export const TRACKS: readonly TrackMeta[] = [
     ],
   },
   {
+    id: "glsl-sdf3d",
+    domain: "glsl",
+    title: "レイマーチングで形を作る",
+    summary: "距離関数を 3D にして箱を描き、mod で空間をくり返して無限に並べ、高さに合わせて座標を回して形をねじる。",
+    icon: "🧱",
+    lessons: [
+      { id: "glsl-box3d", title: "3D の箱: 距離関数を 3D に" },
+      { id: "glsl-repeat3d", title: "空間をくり返す: mod で無限に並べる" },
+      { id: "glsl-twist", title: "ねじる: 高さに合わせて回す" },
+    ],
+  },
+  {
     id: "glsl-lighting",
     domain: "glsl",
     title: "光の質感",
@@ -387,6 +399,18 @@ export const TRACKS: readonly TrackMeta[] = [
       { id: "three-box-size", title: "大きさをそろえる: Box3 と getSize" },
       { id: "three-box-center", title: "中心をそろえる: getCenter" },
       { id: "three-fit-camera", title: "カメラに収める: 大きさから距離を決める" },
+    ],
+  },
+  {
+    id: "three-find",
+    domain: "three",
+    title: "シーンの中を探して変える",
+    summary: "名前で部品を探し（getObjectByName）、子孫を全部たどって変え（traverse）、共有されたマテリアルを複製して 1つだけ色を変える。",
+    icon: "🔎",
+    lessons: [
+      { id: "three-find-by-name", title: "名前で探す: getObjectByName" },
+      { id: "three-traverse", title: "全部たどる: traverse" },
+      { id: "three-clone-material", title: "1つだけ色を変える: マテリアルの複製" },
     ],
   },
   {
@@ -554,6 +578,7 @@ const LOADERS: Readonly<Record<string, () => Promise<{ readonly track: Track }>>
   "glsl-convolution": () => import("./tracks/glsl-convolution.js"),
   "glsl-distort": () => import("./tracks/glsl-distort.js"),
   "glsl-advanced": () => import("./tracks/glsl-advanced.js"),
+  "glsl-sdf3d": () => import("./tracks/glsl-sdf3d.js"),
   "glsl-lighting": () => import("./tracks/glsl-lighting.js"),
   "three-basics": () => import("./tracks/three-basics.js"),
   "three-geometry": () => import("./tracks/three-geometry.js"),
@@ -564,6 +589,7 @@ const LOADERS: Readonly<Record<string, () => Promise<{ readonly track: Track }>>
   "three-space": () => import("./tracks/three-space.js"),
   "three-camera": () => import("./tracks/three-camera.js"),
   "three-box": () => import("./tracks/three-box.js"),
+  "three-find": () => import("./tracks/three-find.js"),
   "three-animation": () => import("./tracks/three-animation.js"),
   "three-data": () => import("./tracks/three-data.js"),
   "three-vertices": () => import("./tracks/three-vertices.js"),

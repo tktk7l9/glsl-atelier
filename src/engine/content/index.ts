@@ -121,6 +121,18 @@ export const TRACKS: readonly TrackMeta[] = [
     ],
   },
   {
+    id: "glsl-hsv",
+    domain: "glsl",
+    title: "色相・彩度・明度（HSV）",
+    summary: "色を色相・彩度・明度で表す HSV。色相から虹色を作り、角度を色相にして色相環を描き、色相を半周まわして補色にする。",
+    icon: "🎡",
+    lessons: [
+      { id: "glsl-hsv-rainbow", title: "色相で虹を作る: HSV から RGB へ" },
+      { id: "glsl-color-wheel", title: "色相環: 角度を色相に、距離を彩度に" },
+      { id: "glsl-hue-shift", title: "補色にする: 色相を半周まわす" },
+    ],
+  },
+  {
     id: "glsl-noise",
     domain: "glsl",
     title: "乱数とノイズ",
@@ -366,6 +378,18 @@ export const TRACKS: readonly TrackMeta[] = [
     ],
   },
   {
+    id: "three-deform",
+    domain: "three",
+    title: "頂点を動かして変形する",
+    summary: "position 属性を書き換えて板を波打たせ、高さに合わせて頂点の色を塗り、モーフターゲットで別の形へなめらかに変形させる。",
+    icon: "🌊",
+    lessons: [
+      { id: "three-wave", title: "板を波打たせる: position 属性" },
+      { id: "three-height-colors", title: "高さで塗り分ける: 頂点の色" },
+      { id: "three-morph", title: "形を変形させる: モーフターゲット" },
+    ],
+  },
+  {
     id: "three-curves",
     domain: "three",
     title: "線から形をつくる",
@@ -447,6 +471,7 @@ const LOADERS: Readonly<Record<string, () => Promise<{ readonly track: Track }>>
   "glsl-sdf": () => import("./tracks/glsl-sdf.js"),
   "glsl-transform": () => import("./tracks/glsl-transform.js"),
   "glsl-polar": () => import("./tracks/glsl-polar.js"),
+  "glsl-hsv": () => import("./tracks/glsl-hsv.js"),
   "glsl-noise": () => import("./tracks/glsl-noise.js"),
   "glsl-tiling": () => import("./tracks/glsl-tiling.js"),
   "glsl-fractal": () => import("./tracks/glsl-fractal.js"),
@@ -466,6 +491,7 @@ const LOADERS: Readonly<Record<string, () => Promise<{ readonly track: Track }>>
   "three-data": () => import("./tracks/three-data.js"),
   "three-vertices": () => import("./tracks/three-vertices.js"),
   "three-uv": () => import("./tracks/three-uv.js"),
+  "three-deform": () => import("./tracks/three-deform.js"),
   "three-curves": () => import("./tracks/three-curves.js"),
   "three-lines-sprites": () => import("./tracks/three-lines-sprites.js"),
   "three-atmosphere": () => import("./tracks/three-atmosphere.js"),

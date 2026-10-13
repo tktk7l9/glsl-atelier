@@ -108,6 +108,18 @@ export const TRACKS: readonly TrackMeta[] = [
     ],
   },
   {
+    id: "glsl-lines",
+    domain: "glsl",
+    title: "線分と多角形",
+    summary: "点と線分の距離で線を描き、線分を min でつないで三角形の輪郭にし、角度を区切って正多角形を塗る。",
+    icon: "🔷",
+    lessons: [
+      { id: "glsl-segment", title: "線分を描く: 線分までの距離" },
+      { id: "glsl-triangle-outline", title: "折れ線: 線分を min でつなぐ" },
+      { id: "glsl-polygon", title: "正多角形: 角度で区切る" },
+    ],
+  },
+  {
     id: "glsl-transform",
     domain: "glsl",
     title: "座標を変換する",
@@ -366,6 +378,18 @@ export const TRACKS: readonly TrackMeta[] = [
     ],
   },
   {
+    id: "three-box",
+    domain: "three",
+    title: "大きさと中心を測る（Box3）",
+    summary: "モデルを包む箱（Box3）で大きさと中心を測り、高さをそろえ、原点に置き直し、ちょうど画面に収まる距離へカメラを下げる。",
+    icon: "📦",
+    lessons: [
+      { id: "three-box-size", title: "大きさをそろえる: Box3 と getSize" },
+      { id: "three-box-center", title: "中心をそろえる: getCenter" },
+      { id: "three-fit-camera", title: "カメラに収める: 大きさから距離を決める" },
+    ],
+  },
+  {
     id: "three-animation",
     domain: "three",
     title: "アニメーション",
@@ -518,6 +542,7 @@ const LOADERS: Readonly<Record<string, () => Promise<{ readonly track: Track }>>
   "glsl-motion": () => import("./tracks/glsl-motion.js"),
   "glsl-patterns": () => import("./tracks/glsl-patterns.js"),
   "glsl-sdf": () => import("./tracks/glsl-sdf.js"),
+  "glsl-lines": () => import("./tracks/glsl-lines.js"),
   "glsl-transform": () => import("./tracks/glsl-transform.js"),
   "glsl-polar": () => import("./tracks/glsl-polar.js"),
   "glsl-hsv": () => import("./tracks/glsl-hsv.js"),
@@ -538,6 +563,7 @@ const LOADERS: Readonly<Record<string, () => Promise<{ readonly track: Track }>>
   "three-math": () => import("./tracks/three-math.js"),
   "three-space": () => import("./tracks/three-space.js"),
   "three-camera": () => import("./tracks/three-camera.js"),
+  "three-box": () => import("./tracks/three-box.js"),
   "three-animation": () => import("./tracks/three-animation.js"),
   "three-data": () => import("./tracks/three-data.js"),
   "three-vertices": () => import("./tracks/three-vertices.js"),

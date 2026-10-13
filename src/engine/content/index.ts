@@ -210,6 +210,18 @@ export const TRACKS: readonly TrackMeta[] = [
     ],
   },
   {
+    id: "glsl-distort",
+    domain: "glsl",
+    title: "絵をゆがめる",
+    summary: "絵を読む座標のほうをずらすと、絵そのものがゆがむ。sin で波打たせ、同心円の波紋を広げ、レンズのようにふくらませる。",
+    icon: "💧",
+    lessons: [
+      { id: "glsl-wave-distort", title: "波打たせる: sin で読む位置をずらす" },
+      { id: "glsl-ripple", title: "波紋: 中心から押したり引いたり" },
+      { id: "glsl-lens", title: "レンズのゆがみ: 中心をふくらませる" },
+    ],
+  },
+  {
     id: "glsl-advanced",
     domain: "glsl",
     title: "上級: 光を当てる",
@@ -378,6 +390,18 @@ export const TRACKS: readonly TrackMeta[] = [
     ],
   },
   {
+    id: "three-texture",
+    domain: "three",
+    title: "テクスチャの設定",
+    summary: "拡大したドット絵をくっきりさせ（magFilter）、くり返しの継ぎ目を鏡のように消し（MirroredRepeatWrapping）、透明な所を切り抜く（alphaTest）。",
+    icon: "🧩",
+    lessons: [
+      { id: "three-nearest-filter", title: "ドット絵をくっきり: magFilter" },
+      { id: "three-mirrored-repeat", title: "継ぎ目なくくり返す: MirroredRepeatWrapping" },
+      { id: "three-alpha-test", title: "透明な所を切り抜く: alphaTest" },
+    ],
+  },
+  {
     id: "three-deform",
     domain: "three",
     title: "頂点を動かして変形する",
@@ -478,6 +502,7 @@ const LOADERS: Readonly<Record<string, () => Promise<{ readonly track: Track }>>
   "glsl-post": () => import("./tracks/glsl-post.js"),
   "glsl-filter": () => import("./tracks/glsl-filter.js"),
   "glsl-convolution": () => import("./tracks/glsl-convolution.js"),
+  "glsl-distort": () => import("./tracks/glsl-distort.js"),
   "glsl-advanced": () => import("./tracks/glsl-advanced.js"),
   "glsl-lighting": () => import("./tracks/glsl-lighting.js"),
   "three-basics": () => import("./tracks/three-basics.js"),
@@ -491,6 +516,7 @@ const LOADERS: Readonly<Record<string, () => Promise<{ readonly track: Track }>>
   "three-data": () => import("./tracks/three-data.js"),
   "three-vertices": () => import("./tracks/three-vertices.js"),
   "three-uv": () => import("./tracks/three-uv.js"),
+  "three-texture": () => import("./tracks/three-texture.js"),
   "three-deform": () => import("./tracks/three-deform.js"),
   "three-curves": () => import("./tracks/three-curves.js"),
   "three-lines-sprites": () => import("./tracks/three-lines-sprites.js"),

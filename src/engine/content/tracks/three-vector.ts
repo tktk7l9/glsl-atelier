@@ -87,7 +87,7 @@ export const track: Track = {
         validators: [
           { kind: "noError" },
           { kind: "sourceMatches", pattern: "\\.dot\\(|angleTo", message: "facing.dot(向き) で内積を求めましょう" },
-          // The two middle balls lie 11° from where the guard looks, the
+          // The two middle balls lie 12° from where the guard looks, the
           // outer two 32°: only the middle two turn gold.
           {
             kind: "allOf",

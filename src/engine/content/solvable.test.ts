@@ -600,6 +600,54 @@ function polygonFill(x: number, y: number, n = 6, half = 0.5): RGB {
   return mixRgb(LINE_BG, POLY_FILL, 1 - step(0.6, d));
 }
 
+/** The 3D SDF lessons' ray marcher: camera at z = 4, 100 steps, orange
+ *  surfaces lit by normalize(0.6, 0.8, 0.5), dark sky elsewhere. */
+type Sdf = (p: V3) => number;
+const MARCH_SKY: RGB = [0.02, 0.03, 0.08];
+const MARCH_LIGHT: V3 = v3norm([0.6, 0.8, 0.5]);
+function marchScene(x: number, y: number, map: Sdf): RGB {
+  const [ux, uy] = centred(x, y);
+  const rd = v3norm([ux, uy, -1.8]);
+  let t = 0;
+  for (let i = 0; i < 100; i++) {
+    const p: V3 = [rd[0] * t, rd[1] * t, 4 + rd[2] * t];
+    const d = map(p);
+    if (d < 0.001) {
+      const e = 0.001;
+      const n = v3norm([
+        map([p[0] + e, p[1], p[2]]) - map([p[0] - e, p[1], p[2]]),
+        map([p[0], p[1] + e, p[2]]) - map([p[0], p[1] - e, p[2]]),
+        map([p[0], p[1], p[2] + e]) - map([p[0], p[1], p[2] - e]),
+      ]);
+      return rgb([0.95, 0.6, 0.3].map((c) => c * (0.15 + 0.85 * Math.max(v3dot(n, MARCH_LIGHT), 0))));
+    }
+    t += d;
+    if (t > 30) break;
+  }
+  return MARCH_SKY;
+}
+/** sdBox in 3D; the options model the plausible slips. */
+function sdBox3(p: V3, b: V3, { abs = true, clampOut = true, interior = true } = {}): number {
+  const q = p.map((v, i) => (abs ? Math.abs(v) : v) - b[i]);
+  const outside = clampOut ? Math.hypot(...q.map((v) => Math.max(v, 0))) : Math.hypot(...q);
+  return outside + (interior ? Math.min(Math.max(q[0], q[1], q[2]), 0) : 0);
+}
+/** The box lesson's view: p turned 0.6 about y, then 0.5 about x. */
+const turnedForBox = (p: V3): V3 => {
+  const [x, z1] = rotate2d(0.6, p[0], p[2]);
+  const [y, z] = rotate2d(0.5, p[1], z1);
+  return [x, y, z];
+};
+const BOX_HALF: V3 = [0.8, 0.5, 0.6];
+/** The repeat lesson: spheres of radius 0.4, the x and y folded by `fold`. */
+const repeatedSpheres = (fold: (v: number) => number, foldY = true): Sdf => (p) => Math.hypot(fold(p[0]), foldY ? fold(p[1]) : p[1], p[2]) - 0.4;
+const cell16 = (v: number): number => glslMod(v + 0.8, 1.6) - 0.8;
+/** The twist lesson: p.xz turned by `angle(p)`, a pillar 0.9 × 2.6 × 0.9, distances × 0.7. */
+const twistedPillar = (angle: (p: V3) => number): Sdf => (p) => {
+  const [x, z] = rotate2d(angle(p), p[0], p[2]);
+  return sdBox3([x, p[1], z], [0.45, 1.3, 0.45]) * 0.7;
+};
+
 /** JS ports of (starter, solution) for the shader lessons added in 2026-10. */
 const SHADER_MODELS: Record<string, { starter: Shade; solution: Shade }> = {
   "glsl-repeat-dots": {
@@ -893,6 +941,19 @@ const SHADER_MODELS: Record<string, { starter: Shade; solution: Shade }> = {
     },
     solution: (x, y) => polygonFill(x, y),
   },
+  // 2026-10, thirteenth batch.
+  "glsl-box3d": {
+    starter: (x, y) => marchScene(x, y, (p) => Math.hypot(...turnedForBox(p)) - 0.8),
+    solution: (x, y) => marchScene(x, y, (p) => sdBox3(turnedForBox(p), BOX_HALF)),
+  },
+  "glsl-repeat3d": {
+    starter: (x, y) => marchScene(x, y, (p) => Math.hypot(...p) - 0.4),
+    solution: (x, y) => marchScene(x, y, repeatedSpheres(cell16)),
+  },
+  "glsl-twist": {
+    starter: (x, y) => marchScene(x, y, (p) => sdBox3(p, [0.45, 1.3, 0.45]) * 0.7),
+    solution: (x, y) => marchScene(x, y, twistedPillar((p) => p[1] * 1.2)),
+  },
 };
 
 describe("shader lessons modelled on the grader's sample grid", () => {
@@ -1164,6 +1225,22 @@ const SHADER_NEAR_MISSES: Record<string, ReadonlyArray<readonly [string, Shade]>
     ["floor(a / r) without + 0.5 (turned half a side)", (x, y) => polygonFill(x, y, 6, 0)],
     ["8 sides", (x, y) => polygonFill(x, y, 8)],
   ],
+  // 2026-10, thirteenth batch.
+  "glsl-box3d": [
+    ["without abs (one corner of space)", (x, y) => marchScene(x, y, (p) => sdBox3(turnedForBox(p), BOX_HALF, { abs: false }))],
+    ["length(q) without max(q, 0.0)", (x, y) => marchScene(x, y, (p) => sdBox3(turnedForBox(p), BOX_HALF, { clampOut: false }))],
+    ["the half-sizes doubled (b * 2.0)", (x, y) => marchScene(x, y, (p) => sdBox3(turnedForBox(p), [1.6, 1, 1.2]))],
+  ],
+  "glsl-repeat3d": [
+    ["without the + 0.8 (the grid shifted half a cell)", (x, y) => marchScene(x, y, repeatedSpheres((v) => glslMod(v, 1.6) - 0.8))],
+    ["x only (one row)", (x, y) => marchScene(x, y, repeatedSpheres(cell16, false))],
+    ["fract instead of mod (cells of 1)", (x, y) => marchScene(x, y, repeatedSpheres((v) => fract(v + 0.8) - 0.8))],
+  ],
+  "glsl-twist": [
+    ["a fixed turn (rot(1.2)), not by height", (x, y) => marchScene(x, y, twistedPillar(() => 1.2))],
+    ["twisted by p.x instead of p.y", (x, y) => marchScene(x, y, twistedPillar((p) => p[0] * 1.2))],
+    ["twice the twist (p.y * 2.4)", (x, y) => marchScene(x, y, twistedPillar((p) => p[1] * 2.4))],
+  ],
 };
 
 describe("shader near misses are rejected", () => {
@@ -1278,6 +1355,20 @@ const SHADER_VARIANTS: Record<string, ReadonlyArray<readonly [string, Shade]>> =
   "glsl-segment": [["distance(p, a + ba * h)", (x, y) => inked(segmentDistance([x, y], SEG_A, SEG_B))]],
   "glsl-triangle-outline": [["min(min(d1, d2), d3)", (x, y) => inked(Math.min(Math.min(...triangleSides(x, y).slice(0, 2)), triangleSides(x, y)[2]))]],
   "glsl-polygon": [["the angle folded with mod", (x, y) => polygonFill(x, y)]],
+  // 2026-10, thirteenth batch.
+  "glsl-box3d": [
+    [
+      "max(q.x, max(q.y, q.z)) only (a cheaper bound)",
+      (x, y) =>
+        marchScene(x, y, (p) => {
+          const b = turnedForBox(p);
+          return Math.max(Math.abs(b[0]) - 0.8, Math.abs(b[1]) - 0.5, Math.abs(b[2]) - 0.6);
+        }),
+    ],
+    ["length(max(q, 0.0)) only (the outside distance)", (x, y) => marchScene(x, y, (p) => sdBox3(turnedForBox(p), BOX_HALF, { interior: false }))],
+  ],
+  "glsl-repeat3d": [["mod(p.xy - 0.8, 1.6) - 0.8", (x, y) => marchScene(x, y, repeatedSpheres((v) => glslMod(v - 0.8, 1.6) - 0.8))]],
+  "glsl-twist": [["the angle in its own variable", (x, y) => marchScene(x, y, twistedPillar((p) => p[1] * 1.2))]],
 };
 
 describe("shader variants are accepted", () => {
@@ -1768,6 +1859,9 @@ const FLAT_LESSONS = [
   "three-box-size",
   "three-box-center",
   "three-fit-camera",
+  "three-find-by-name",
+  "three-traverse",
+  "three-clone-material",
   "three-rotate",
   "three-keyframes",
   "three-points",
@@ -1867,6 +1961,10 @@ const ORDER_LINE = "m.multiplyMatrices(rotate, move);";
 const FIT_HEIGHT_LINE = "snowman.scale.setScalar(2 / size.y);";
 const CENTRE_LINE = "house.position.sub(center);";
 const DISTANCE_LINE = "camera.position.z = (size.y / 2) / Math.tan(halfFov) * 1.15;";
+/** Lines of the thirteenth-batch scene solutions that the edits below change. */
+const HEAD_LINE = "scene.getObjectByName('head').material.color.set('tomato');";
+const LEAVES_LINE = "  if (o.name === 'leaves') o.material.color.set('orange');";
+const CLONE_LINE = "middle.material = middle.material.clone();";
 
 /** Plausible wrong answers to the 2026-10 (third to sixth batch) unlit scene
  *  lessons, as edits of the solution; each must be rejected at both preview
@@ -2076,6 +2174,23 @@ const SCENE_NEAR_MISSES: Record<string, ReadonlyArray<readonly [string, (solutio
     ["the field of view in degrees", (s) => s.replace("const halfFov = THREE.MathUtils.degToRad(camera.fov / 2);", "const halfFov = camera.fov / 2;  // THREE.MathUtils.degToRad")],
     ["the whole field of view, not half", (s) => s.replace("degToRad(camera.fov / 2)", "degToRad(camera.fov)")],
   ],
+  // 2026-10, thirteenth batch.
+  "three-find-by-name": [
+    ["the first child (the body)", (s) => s.replace(HEAD_LINE, "robot.children[0].material.color.set('tomato');  // getObjectByName")],
+    ["every part through traverse", (s) => s.replace(HEAD_LINE, "robot.traverse((o) => { if (o.isMesh) o.material.color.set('tomato'); });")],
+  ],
+  "three-traverse": [
+    ["the first leaves only (getObjectByName)", (s) => s.replace(/forest\.traverse\(\(o\) => \{\n[\s\S]*?\n\}\);\n/, "forest.getObjectByName('leaves').material.color.set('orange');  // traverse\n")],
+    ["the trunks too (every mesh)", (s) => s.replace(LEAVES_LINE, "  if (o.isMesh) o.material.color.set('orange');")],
+    [
+      "the direct children only (forest.children)",
+      (s) => s.replace(/forest\.traverse\(\(o\) => \{\n[\s\S]*?\n\}\);\n/, "forest.children.forEach((o) => { if (o.name === 'leaves') o.material.color.set('orange'); });  // traverse\n"),
+    ],
+  ],
+  "three-clone-material": [
+    ["no clone (the shared material changed)", (s) => s.replace(CLONE_LINE, "// clone")],
+    ["cloned after the colour was set", (s) => s.replace(CLONE_LINE + "  // 共有をやめて、このボール専用のコピーにする\n", "").replace("middle.material.color.set('hotpink');       // コピーの色だけを変える\n", "middle.material.color.set('hotpink');\n" + CLONE_LINE + "\n")],
+  ],
 };
 
 /** Other correct ways to write the fifth- and sixth-batch unlit scene lessons;
@@ -2241,6 +2356,18 @@ const SCENE_VARIANTS: Record<string, ReadonlyArray<readonly [string, (solution: 
   "three-fit-camera": [
     ["camera.position.set(0, 0, distance)", (s) => s.replace(DISTANCE_LINE, "const distance = (size.y / 2) / Math.tan(halfFov) * 1.15;\ncamera.position.set(0, 0, distance);")],
     ["the angle in radians by hand", (s) => s.replace("THREE.MathUtils.degToRad(camera.fov / 2)", "camera.fov * Math.PI / 360")],
+  ],
+  // 2026-10, thirteenth batch.
+  "three-find-by-name": [
+    ["robot.getObjectByName", (s) => s.replace(HEAD_LINE, "robot.getObjectByName('head').material.color.set('tomato');")],
+    ["getObjectByProperty('name', 'head')", (s) => s.replace(HEAD_LINE, "scene.getObjectByProperty('name', 'head').material.color.set('tomato');")],
+  ],
+  "three-traverse": [
+    ["scene.traverse with isMesh too", (s) => s.replace("forest.traverse((o) => {", "scene.traverse((o) => {").replace(LEAVES_LINE, "  if (o.isMesh && o.name === 'leaves') o.material.color.set('orange');")],
+  ],
+  "three-clone-material": [
+    ["a new material", (s) => s.replace(CLONE_LINE, "middle.material = new THREE.MeshBasicMaterial({ color: 'skyblue' });")],
+    ["the clone coloured, then assigned", (s) => s.replace(CLONE_LINE, "const own = middle.material.clone();\nown.color.set('hotpink');\nmiddle.material = own;")],
   ],
 };
 

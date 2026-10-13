@@ -25,7 +25,7 @@ import { describe, expect, it } from "vitest";
 import * as THREE from "three";
 import { evaluate } from "../validate/run.js";
 import type { ValidatorSpec } from "../validate/primitives.js";
-import type { RGB, Sample, SceneSnapshot, ShaderSnapshot } from "../validate/snapshot.js";
+import type { RGB, RGBA, Sample, SceneSnapshot, ShaderSnapshot } from "../validate/snapshot.js";
 import { collectObjects } from "../../sandbox/scene-graph.js";
 import { TRACKS, loadTrack } from "./index.js";
 import type { Lesson } from "./types.js";
@@ -536,6 +536,25 @@ const hueShifted = (x: number, y: number, change: (hsv: [number, number, number]
   return hsv2rgb(h, s, v);
 };
 
+/** The distortion lessons' picture: an 8×8 checkerboard of two colours. */
+const CHECKER_DARK: RGB = [0.1, 0.15, 0.35];
+const CHECKER_LIGHT: RGB = [0.95, 0.85, 0.55];
+const checker = (u: number, v: number): RGB => (glslMod(Math.floor(u * 8) + Math.floor(v * 8), 2) ? CHECKER_LIGHT : CHECKER_DARK);
+/** The checkerboard read where `warp` moves the pixel's coordinate. */
+const warped = (x: number, y: number, warp: (u: number, v: number) => [number, number]): RGB => checker(...warp(x, y));
+/** The ripple: pushed along the direction from the middle by `amount(d)` of it. */
+const ripple = (x: number, y: number, amount = (d: number) => 0.15 * Math.sin(d * 40), along = (dx: number, dy: number): [number, number] => [dx, dy]): RGB => {
+  const [ax, ay] = along(x - 0.5, y - 0.5);
+  const k = amount(length(x - 0.5, y - 0.5));
+  return checker(x + ax * k, y + ay * k);
+};
+/** The lens: read at 0.5 + p * scale(p), or from the corner when `fromCorner`. */
+const lens = (x: number, y: number, scale = (px: number, py: number) => 1 + 1.5 * (px * px + py * py), fromCorner = false): RGB => {
+  const [px, py] = [x - 0.5, y - 0.5];
+  const k = scale(px, py);
+  return fromCorner ? checker(x * k, y * k) : checker(0.5 + px * k, 0.5 + py * k);
+};
+
 /** JS ports of (starter, solution) for the shader lessons added in 2026-10. */
 const SHADER_MODELS: Record<string, { starter: Shade; solution: Shade }> = {
   "glsl-repeat-dots": {
@@ -787,6 +806,19 @@ const SHADER_MODELS: Record<string, { starter: Shade; solution: Shade }> = {
     starter: (x, y) => picture(x, y),
     solution: (x, y) => hueShifted(x, y, ([h, s, v]) => [fract(h + 0.5), s, v]),
   },
+  // 2026-10, tenth batch.
+  "glsl-wave-distort": {
+    starter: (x, y) => checker(x, y),
+    solution: (x, y) => warped(x, y, (u, v) => [u + 0.04 * Math.sin(v * 25), v]),
+  },
+  "glsl-ripple": {
+    starter: (x, y) => checker(x, y),
+    solution: (x, y) => ripple(x, y),
+  },
+  "glsl-lens": {
+    starter: (x, y) => checker(x, y),
+    solution: (x, y) => lens(x, y),
+  },
 };
 
 describe("shader lessons modelled on the grader's sample grid", () => {
@@ -1006,6 +1038,23 @@ const SHADER_NEAR_MISSES: Record<string, ReadonlyArray<readonly [string, Shade]>
       },
     ],
   ],
+  // 2026-10, tenth batch.
+  "glsl-wave-distort": [
+    ["the wave on y (the rows wave instead)", (x, y) => warped(x, y, (u, v) => [u, v + 0.04 * Math.sin(u * 25)])],
+    ["sin of x (the columns squeezed, not waved)", (x, y) => warped(x, y, (u, v) => [u + 0.04 * Math.sin(u * 25), v])],
+    ["an amplitude of 0.004", (x, y) => warped(x, y, (u, v) => [u + 0.004 * Math.sin(v * 25), v])],
+    ["the wave the other way (- 0.04)", (x, y) => warped(x, y, (u, v) => [u - 0.04 * Math.sin(v * 25), v])],
+  ],
+  "glsl-ripple": [
+    ["only x pushed (dir.x)", (x, y) => ripple(x, y, undefined, (dx) => [dx, 0])],
+    ["rings of frequency 4 (not 40)", (x, y) => ripple(x, y, (d) => 0.15 * Math.sin(d * 4))],
+    ["pushed along a fixed (0.3, 0.3)", (x, y) => ripple(x, y, undefined, () => [0.3, 0.3])],
+  ],
+  "glsl-lens": [
+    ["1.0 - 1.5 * dot(p, p) (the pincushion)", (x, y) => lens(x, y, (px, py) => 1 - 1.5 * (px * px + py * py))],
+    ["length(p) instead of dot(p, p)", (x, y) => lens(x, y, (px, py) => 1 + 1.5 * length(px, py))],
+    ["scaled from the corner (0.5 not added back)", (x, y) => lens(x, y, undefined, true)],
+  ],
 };
 
 describe("shader near misses are rejected", () => {
@@ -1096,6 +1145,10 @@ const SHADER_VARIANTS: Record<string, ReadonlyArray<readonly [string, Shade]>> =
       },
     ],
   ],
+  // 2026-10, tenth batch.
+  "glsl-wave-distort": [["uv = vec2(uv.x + 0.04 * sin(uv.y * 25.0), uv.y)", (x, y) => warped(x, y, (u, v) => [u + 0.04 * Math.sin(v * 25), v])]],
+  "glsl-ripple": [["uv = 0.5 + dir * (1.0 + 0.15 * sin(length(dir) * 40.0))", (x, y) => ripple(x, y)]],
+  "glsl-lens": [["uv = 0.5 + p + p * 1.5 * dot(p, p)", (x, y) => lens(x, y)]],
 };
 
 describe("shader variants are accepted", () => {
@@ -1260,29 +1313,58 @@ function softIrradiance(lights: readonly THREE.Light[], n: THREE.Vector3): THREE
   return e;
 }
 
-/** The texel under `uv` as a linear colour. The lessons sample well inside
- *  texels, so nearest sampling stands in for every filter. */
-function texel(map: THREE.Texture, uv: THREE.Vector2): RGB {
+/** A texel index wrapped the way the GPU wraps the coordinate. */
+function wrapIndex(i: number, n: number, mode: THREE.Wrapping): number {
+  if (mode === THREE.RepeatWrapping) return ((i % n) + n) % n;
+  if (mode === THREE.MirroredRepeatWrapping) {
+    const k = ((i % (2 * n)) + 2 * n) % (2 * n);
+    return k < n ? k : 2 * n - 1 - k; // every other copy runs backwards
+  }
+  return Math.min(n - 1, Math.max(0, i)); // ClampToEdge
+}
+
+/** The texture under `uv` as a linear colour and its alpha. The lessons'
+ *  textures are always magnified, so the magnification filter decides:
+ *  the nearest texel, or (LinearFilter) the four nearest blended by
+ *  distance, after an sRGB texture's texels are decoded, as the GPU does. */
+function texel(map: THREE.Texture, uv: THREE.Vector2): RGBA {
   // repeat / offset / rotation, as the renderer's uvTransform applies them.
   map.updateMatrix();
   const at = uv.clone().applyMatrix3(map.matrix);
-  const wrap = (v: number, mode: THREE.Wrapping): number =>
-    mode === THREE.RepeatWrapping ? fract(v) : Math.min(1, Math.max(0, v)); // else ClampToEdge
-  const u = wrap(at.x, map.wrapS);
-  const v = wrap(at.y, map.wrapT);
   const { data, width, height } =
     map.image instanceof FakeCanvas
       ? { data: map.image.pixels, width: map.image.width, height: map.image.height }
       : (map.image as { data: Uint8Array; width: number; height: number });
-  const column = Math.min(width - 1, Math.floor(u * width));
-  const fromBottom = Math.min(height - 1, Math.floor(v * height));
-  // A DataTexture's first row is the bottom (flipY = false); a canvas's first
-  // row is its top, flipped up to v = 1 on upload (flipY = true).
-  const row = map.flipY ? height - 1 - fromBottom : fromBottom;
-  const i = (row * width + column) * 4;
-  const raw: RGB = [data[i] / 255, data[i + 1] / 255, data[i + 2] / 255];
-  // A NoColorSpace texel is used as linear; an sRGB one is decoded first.
-  return map.colorSpace === THREE.SRGBColorSpace ? [srgbToLinear(raw[0]), srgbToLinear(raw[1]), srgbToLinear(raw[2])] : raw;
+  const read = (cx: number, cy: number): RGBA => {
+    const column = wrapIndex(cx, width, map.wrapS);
+    const fromBottom = wrapIndex(cy, height, map.wrapT);
+    // A DataTexture's first row is the bottom (flipY = false); a canvas's
+    // first row is its top, flipped up to v = 1 on upload (flipY = true).
+    const row = map.flipY ? height - 1 - fromBottom : fromBottom;
+    const i = (row * width + column) * 4;
+    const raw = [data[i] / 255, data[i + 1] / 255, data[i + 2] / 255];
+    // A NoColorSpace texel is used as linear; an sRGB one is decoded first.
+    const [r, g, b] = map.colorSpace === THREE.SRGBColorSpace ? raw.map(srgbToLinear) : raw;
+    return [r, g, b, data[i + 3] / 255];
+  };
+  if (map.magFilter !== THREE.LinearFilter) return read(Math.floor(at.x * width), Math.floor(at.y * height));
+  const tx = at.x * width - 0.5;
+  const ty = at.y * height - 0.5;
+  const x0 = Math.floor(tx);
+  const y0 = Math.floor(ty);
+  const [c00, c10, c01, c11] = [read(x0, y0), read(x0 + 1, y0), read(x0, y0 + 1), read(x0 + 1, y0 + 1)];
+  const blend = (k: number): number => mix(mix(c00[k], c10[k], tx - x0), mix(c01[k], c11[k], tx - x0), ty - y0);
+  return [blend(0), blend(1), blend(2), blend(3)];
+}
+
+/** How opaque a material draws where `hit` lands: its opacity when
+ *  transparent (times the texture's alpha), else fully; null when alphaTest
+ *  discards the fragment there, so the ray goes on to what lies behind. */
+function coverage(m: THREE.Material, hit: THREE.Intersection): number | null {
+  const { map } = m as THREE.MeshBasicMaterial;
+  const a = map && map.version > 0 && hit.uv ? texel(map, hit.uv)[3] : 1;
+  if (m.alphaTest > 0 && a < m.alphaTest) return null;
+  return m.transparent ? m.opacity * a : 1;
 }
 
 /** The colour MeshNormalMaterial writes for a ray hit: the interpolated vertex
@@ -1443,8 +1525,11 @@ function flatRender({ scene, camera, renderer }: SceneRun, aspect: number): Samp
         const key = `${hit.object.uuid}:${hit.instanceId ?? ""}`;
         if (seen.has(key)) continue;
         seen.add(key);
+        // A fragment alphaTest discards lets the ray go on, like a clipped one.
+        const alpha = coverage(m, hit);
+        if (alpha === null) continue;
         const colour = m instanceof THREE.MeshNormalMaterial ? normalColor(hit, camera) : flatColor(m, hit, softLights);
-        layers.push([hit.distance, fogged(scene, camera, m, hit.point, colour), alphaOf(m)]);
+        layers.push([hit.distance, fogged(scene, camera, m, hit.point, colour), alpha]);
       }
       // A point is a screen-aligned square, size / (2 · depth) NDC high on
       // each side of its centre (gl_PointSize = size · scale / depth).
@@ -1559,6 +1644,9 @@ const FLAT_LESSONS = [
   "three-uv",
   "three-texture-atlas",
   "three-texture-rotation",
+  "three-nearest-filter",
+  "three-mirrored-repeat",
+  "three-alpha-test",
   "three-wave",
   "three-height-colors",
   "three-morph",
@@ -1631,6 +1719,10 @@ const MIX_LINE = "c.lerpColors(low, high, (h + 1) / 2);";
 const WRITE_LINE = "c.toArray(colors, i * 3);";
 const MORPH_TARGET_LINE = "geo.morphAttributes.position = [new THREE.Float32BufferAttribute(star, 3)];";
 const INFLUENCE_LINE = "shape.morphTargetInfluences[0] = 1;";
+/** Lines of the tenth-batch scene solutions that the edits below change. */
+const NEAREST_LINE = "tex.magFilter = THREE.NearestFilter;  // 拡大するとき、いちばん近いピクセルの色をそのまま使う\n";
+const MIRRORED_LINE = "tex.wrapS = THREE.MirroredRepeatWrapping;  // 1つおきに左右を反転してくり返す\n";
+const HEART_MATERIAL = "{ map: tex, alphaTest: 0.5 }";
 
 /** Plausible wrong answers to the 2026-10 (third to sixth batch) unlit scene
  *  lessons, as edits of the solution; each must be rejected at both preview
@@ -1792,6 +1884,22 @@ const SCENE_NEAR_MISSES: Record<string, ReadonlyArray<readonly [string, (solutio
       (s) => s.replace(MORPH_TARGET_LINE, "").replace("scene.add(shape);", "scene.add(shape);\n" + MORPH_TARGET_LINE),
     ],
   ],
+  // 2026-10, tenth batch.
+  "three-nearest-filter": [
+    ["minFilter instead of magFilter", (s) => s.replace(NEAREST_LINE, "tex.minFilter = THREE.NearestFilter;\n")],
+    ["magFilter = LinearFilter", (s) => s.replace(NEAREST_LINE, "tex.magFilter = THREE.LinearFilter;  // NearestFilter\n")],
+    ["set on the material, not the texture", (s) => s.replace(NEAREST_LINE, "").replace("scene.add(board);", "scene.add(board);\nboard.material.magFilter = THREE.NearestFilter;")],
+  ],
+  "three-mirrored-repeat": [
+    ["wrapT instead of wrapS", (s) => s.replace(MIRRORED_LINE, "tex.wrapT = THREE.MirroredRepeatWrapping;\n")],
+    ["clamped (ClampToEdgeWrapping)", (s) => s.replace(MIRRORED_LINE, "tex.wrapS = THREE.ClampToEdgeWrapping;  // MirroredRepeatWrapping\n")],
+    ["mirrored, but repeated once", (s) => s.replace("tex.repeat.set(3, 1);", "tex.repeat.set(1, 1);")],
+  ],
+  "three-alpha-test": [
+    ["transparent with opacity 0.5", (s) => s.replace(HEART_MATERIAL, "{ map: tex, transparent: true, opacity: 0.5 }")],
+    ["alphaTest on the texture", (s) => s.replace(HEART_MATERIAL, "{ map: tex }").replace("scene.add(heart);", "scene.add(heart);\ntex.alphaTest = 0.5;")],
+    ["alphaTest 1.5 (every pixel discarded)", (s) => s.replace(HEART_MATERIAL, "{ map: tex, alphaTest: 1.5 }")],
+  ],
 };
 
 /** Other correct ways to write the fifth- and sixth-batch unlit scene lessons;
@@ -1901,6 +2009,23 @@ const SCENE_VARIANTS: Record<string, ReadonlyArray<readonly [string, (solution: 
       (s) => s.replace(MORPH_TARGET_LINE, "").replace("scene.add(shape);", "scene.add(shape);\n" + MORPH_TARGET_LINE + "\nshape.updateMorphTargets();"),
     ],
     ["a BufferAttribute over a Float32Array", (s) => s.replace("new THREE.Float32BufferAttribute(star, 3)", "new THREE.BufferAttribute(new Float32Array(star), 3)")],
+  ],
+  // 2026-10, tenth batch.
+  "three-nearest-filter": [
+    ["both filters Nearest", (s) => s.replace(NEAREST_LINE, "tex.magFilter = tex.minFilter = THREE.NearestFilter;\n")],
+    [
+      "the filter given to the constructor",
+      (s) => s.replace(NEAREST_LINE, "").replace("new THREE.CanvasTexture(canvas)", "new THREE.CanvasTexture(canvas, undefined, undefined, undefined, THREE.NearestFilter)"),
+    ],
+  ],
+  "three-mirrored-repeat": [
+    ["wrapS and wrapT both mirrored", (s) => s.replace(MIRRORED_LINE, "tex.wrapS = tex.wrapT = THREE.MirroredRepeatWrapping;\n")],
+    ["the Repeat line kept, Mirrored set after it", (s) => s.replace(MIRRORED_LINE, "tex.wrapS = THREE.RepeatWrapping;\n" + MIRRORED_LINE)],
+  ],
+  "three-alpha-test": [
+    ["transparent: true", (s) => s.replace(HEART_MATERIAL, "{ map: tex, transparent: true }")],
+    ["alphaTest 0.1", (s) => s.replace(HEART_MATERIAL, "{ map: tex, alphaTest: 0.1 }")],
+    ["alphaTest set on the material afterwards", (s) => s.replace(HEART_MATERIAL, "{ map: tex }").replace("scene.add(heart);", "scene.add(heart);\nheart.material.alphaTest = 0.5;")],
   ],
 };
 

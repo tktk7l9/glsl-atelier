@@ -649,6 +649,24 @@ const twistedPillar = (angle: (p: V3) => number): Sdf => (p) => {
 };
 
 /** JS ports of (starter, solution) for the shader lessons added in 2026-10. */
+/** The glow lessons: light of strength k / distance, in a colour. */
+const GLOW_ORANGE: RGB = [1, 0.55, 0.2];
+const NEON_BLUE: RGB = [0.3, 0.8, 1];
+const LIGHT_CYAN: RGB = [0.2, 0.8, 1];
+const LIGHT_MAGENTA: RGB = [1, 0.2, 0.8];
+const scaled = (c: RGB, k: number): RGB => [c[0] * k, c[1] * k, c[2] * k];
+const pointGlow = (x: number, y: number, glow: (d: number) => number): RGB => scaled(GLOW_ORANGE, glow(length(x - 0.5, y - 0.5)));
+const NEON_A: P2 = [0.2, 0.5];
+const NEON_B: P2 = [0.8, 0.5];
+const neon = (d: number, strength = (v: number) => 0.015 / v): RGB => scaled(NEON_BLUE, strength(d));
+/** The adding lesson: two lights, combined channel by channel. */
+function twoLights(x: number, y: number, combine: (a: number, b: number) => number): RGB {
+  const a = scaled(LIGHT_CYAN, 0.04 / length(x - 0.35, y - 0.5));
+  const b = scaled(LIGHT_MAGENTA, 0.04 / length(x - 0.65, y - 0.5));
+  return [combine(a[0], b[0]), combine(a[1], b[1]), combine(a[2], b[2])];
+}
+const expTone = (v: number): number => 1 - Math.exp(-v);
+
 const SHADER_MODELS: Record<string, { starter: Shade; solution: Shade }> = {
   "glsl-repeat-dots": {
     starter: (x, y) => grey(1 - step(0.3, length(x - 0.5, y - 0.5))),
@@ -954,6 +972,19 @@ const SHADER_MODELS: Record<string, { starter: Shade; solution: Shade }> = {
     starter: (x, y) => marchScene(x, y, (p) => sdBox3(p, [0.45, 1.3, 0.45]) * 0.7),
     solution: (x, y) => marchScene(x, y, twistedPillar((p) => p[1] * 1.2)),
   },
+  // 2026-10, fourteenth batch.
+  "glsl-glow": {
+    starter: (x, y) => pointGlow(x, y, () => 0),
+    solution: (x, y) => pointGlow(x, y, (d) => 0.03 / d),
+  },
+  "glsl-neon": {
+    starter: (x, y) => neon(length(x - 0.5, y - 0.5)),
+    solution: (x, y) => neon(segmentDistance([x, y], NEON_A, NEON_B)),
+  },
+  "glsl-glow-add": {
+    starter: (x, y) => twoLights(x, y, (a, b) => Math.max(a, b)),
+    solution: (x, y) => twoLights(x, y, (a, b) => expTone(a + b)),
+  },
 };
 
 describe("shader lessons modelled on the grader's sample grid", () => {
@@ -1241,6 +1272,23 @@ const SHADER_NEAR_MISSES: Record<string, ReadonlyArray<readonly [string, Shade]>
     ["twisted by p.x instead of p.y", (x, y) => marchScene(x, y, twistedPillar((p) => p[0] * 1.2))],
     ["twice the twist (p.y * 2.4)", (x, y) => marchScene(x, y, twistedPillar((p) => p[1] * 2.4))],
   ],
+  // 2026-10, fourteenth batch.
+  "glsl-glow": [
+    ["1.0 - d (a straight fall-off)", (x, y) => pointGlow(x, y, (d) => 1 - d)],
+    ["0.03 * d (dark in the middle)", (x, y) => pointGlow(x, y, (d) => 0.03 * d)],
+    ["0.03 / (d * d) (too sharp)", (x, y) => pointGlow(x, y, (d) => 0.03 / (d * d))],
+  ],
+  "glsl-neon": [
+    ["the whole line (segment without clamp)", (x, y) => neon(segmentDistance([x, y], NEON_A, NEON_B, (t) => t))],
+    ["the distance to a only", (x, y) => neon(length(x - NEON_A[0], y - NEON_A[1]))],
+    ["0.015 * d (dark on the tube)", (x, y) => neon(segmentDistance([x, y], NEON_A, NEON_B), (d) => 0.015 * d)],
+  ],
+  "glsl-glow-add": [
+    ["added, not tone-mapped (white past 1)", (x, y) => twoLights(x, y, (a, b) => a + b)],
+    ["max, tone-mapped", (x, y) => twoLights(x, y, (a, b) => expTone(Math.max(a, b)))],
+    ["multiplied, tone-mapped", (x, y) => twoLights(x, y, (a, b) => expTone(a * b))],
+    ["Reinhard col / (1.0 + col) instead", (x, y) => twoLights(x, y, (a, b) => (a + b) / (1 + a + b))],
+  ],
 };
 
 describe("shader near misses are rejected", () => {
@@ -1369,6 +1417,15 @@ const SHADER_VARIANTS: Record<string, ReadonlyArray<readonly [string, Shade]>> =
   ],
   "glsl-repeat3d": [["mod(p.xy - 0.8, 1.6) - 0.8", (x, y) => marchScene(x, y, repeatedSpheres((v) => glslMod(v - 0.8, 1.6) - 0.8))]],
   "glsl-twist": [["the angle in its own variable", (x, y) => marchScene(x, y, twistedPillar((p) => p[1] * 1.2))]],
+  // 2026-10, fourteenth batch.
+  "glsl-glow": [["0.03 / max(d, 0.001) (guarded against d = 0)", (x, y) => pointGlow(x, y, (d) => 0.03 / Math.max(d, 0.001))]],
+  "glsl-neon": [
+    [
+      "length(vec2(max(abs(st.x - 0.5) - 0.3, 0.0), st.y - 0.5)): the tube as a flat box",
+      (x, y) => neon(length(Math.max(Math.abs(x - 0.5) - 0.3, 0), y - 0.5)),
+    ],
+  ],
+  "glsl-glow-add": [["1.0 - exp(-(a + b)) in one line", (x, y) => twoLights(x, y, (a, b) => expTone(a + b))]],
 };
 
 describe("shader variants are accepted", () => {
@@ -1883,6 +1940,9 @@ const FLAT_LESSONS = [
   "three-lathe",
   "three-extrude",
   "three-tube",
+  "three-curve-point",
+  "three-spaced-points",
+  "three-curve-tangent",
   "three-sprite",
   "three-fog",
   "three-fog-exp2",
@@ -1965,6 +2025,11 @@ const DISTANCE_LINE = "camera.position.z = (size.y / 2) / Math.tan(halfFov) * 1.
 const HEAD_LINE = "scene.getObjectByName('head').material.color.set('tomato');";
 const LEAVES_LINE = "  if (o.name === 'leaves') o.material.color.set('orange');";
 const CLONE_LINE = "middle.material = middle.material.clone();";
+/** Lines of the fourteenth-batch scene solutions that the edits below change. */
+const HALF_WAY_LINE = "marker.position.copy(curve.getPointAt(0.5));";
+const BEADS_LOOP = /curve\.getSpacedPoints\(4\)\.forEach\(\(p\) => \{[^\n]*\n/;
+const BEADS_END = "  scene.add(bead);\n});\n";
+const TANGENT_LINE = "car.lookAt(point.clone().add(curve.getTangentAt(0.5)));";
 
 /** Plausible wrong answers to the 2026-10 (third to sixth batch) unlit scene
  *  lessons, as edits of the solution; each must be rejected at both preview
@@ -2191,6 +2256,25 @@ const SCENE_NEAR_MISSES: Record<string, ReadonlyArray<readonly [string, (solutio
     ["no clone (the shared material changed)", (s) => s.replace(CLONE_LINE, "// clone")],
     ["cloned after the colour was set", (s) => s.replace(CLONE_LINE + "  // 共有をやめて、このボール専用のコピーにする\n", "").replace("middle.material.color.set('hotpink');       // コピーの色だけを変える\n", "middle.material.color.set('hotpink');\n" + CLONE_LINE + "\n")],
   ],
+  // 2026-10, fourteenth batch (each keeps the method's name in a comment, so
+  // only the scene and the picture decide).
+  "three-curve-point": [
+    ["getPoint (by the curve's own parameter)", (s) => s.replace(HALF_WAY_LINE, "marker.position.copy(curve.getPoint(0.5));  // not getPointAt")],
+    ["a quarter of the way", (s) => s.replace(HALF_WAY_LINE, "marker.position.copy(curve.getPointAt(0.25));")],
+    ["the second control point", (s) => s.replace(HALF_WAY_LINE, "marker.position.copy(curve.points[1]);  // getPointAt")],
+  ],
+  "three-spaced-points": [
+    ["getPoints (by the curve's own parameter)", (s) => s.replace(BEADS_LOOP, "curve.getPoints(4).forEach((p) => {  // not getSpacedPoints\n")],
+    ["five parts (6 beads)", (s) => s.replace("getSpacedPoints(4)", "getSpacedPoints(5)")],
+    ["three parts (4 beads)", (s) => s.replace("getSpacedPoints(4)", "getSpacedPoints(3)")],
+    ["the beads never added to the scene", (s) => s.replace(BEADS_END, "});\n")],
+  ],
+  "three-curve-tangent": [
+    ["not turned (still facing the camera)", (s) => s.replace(TANGENT_LINE, "// getTangentAt")],
+    ["turned backwards (sub)", (s) => s.replace("point.clone().add(", "point.clone().sub(")],
+    ["the tangent itself as the point to look at", (s) => s.replace(TANGENT_LINE, "car.lookAt(curve.getTangentAt(0.5));")],
+    ["getTangent (by the curve's own parameter)", (s) => s.replace("getTangentAt(0.5)", "getTangent(0.5)")],
+  ],
 };
 
 /** Other correct ways to write the fifth- and sixth-batch unlit scene lessons;
@@ -2368,6 +2452,24 @@ const SCENE_VARIANTS: Record<string, ReadonlyArray<readonly [string, (solution: 
   "three-clone-material": [
     ["a new material", (s) => s.replace(CLONE_LINE, "middle.material = new THREE.MeshBasicMaterial({ color: 'skyblue' });")],
     ["the clone coloured, then assigned", (s) => s.replace(CLONE_LINE, "const own = middle.material.clone();\nown.color.set('hotpink');\nmiddle.material = own;")],
+  ],
+  // 2026-10, fourteenth batch.
+  "three-curve-point": [
+    ["getPointAt(0.5, marker.position) (the target argument)", (s) => s.replace(HALF_WAY_LINE, "curve.getPointAt(0.5, marker.position);")],
+    ["set from x, y and z", (s) => s.replace(HALF_WAY_LINE, "const p = curve.getPointAt(0.5);\nmarker.position.set(p.x, p.y, p.z);")],
+    ["the middle of getSpacedPoints(2)", (s) => s.replace("curve.getPointAt(0.5)", "curve.getSpacedPoints(2)[1]")],
+  ],
+  "three-spaced-points": [
+    [
+      "getPointAt(i / 4) in a for loop",
+      (s) => s.replace(BEADS_LOOP, "for (let i = 0; i <= 4; i++) {\n  const p = curve.getPointAt(i / 4);\n").replace(BEADS_END, "  scene.add(bead);\n}\n"),
+    ],
+    ["for...of over getSpacedPoints(4)", (s) => s.replace(BEADS_LOOP, "for (const p of curve.getSpacedPoints(4)) {\n").replace(BEADS_END, "  scene.add(bead);\n}\n")],
+  ],
+  "three-curve-tangent": [
+    ["lookAt(x, y, z)", (s) => s.replace(TANGENT_LINE, "const t = curve.getTangentAt(0.5);\ncar.lookAt(point.x + t.x, point.y + t.y, point.z + t.z);")],
+    ["a point further ahead (addScaledVector)", (s) => s.replace(TANGENT_LINE, "car.lookAt(point.clone().addScaledVector(curve.getTangentAt(0.5), 3));")],
+    ["quaternion.setFromUnitVectors", (s) => s.replace(TANGENT_LINE, "car.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), curve.getTangentAt(0.5));")],
   ],
 };
 

@@ -46,6 +46,18 @@ export const TRACKS: readonly TrackMeta[] = [
     ],
   },
   {
+    id: "glsl-plot",
+    domain: "glsl",
+    title: "グラフで形を作る",
+    summary: "y = f(x) のグラフを線で描き、pow で曲げ、smoothstep で S 字にする。値の変わり方を形づくる「シェイピング関数」を目で見る。",
+    icon: "✏️",
+    lessons: [
+      { id: "glsl-plot-line", title: "グラフを描く: y = x の線" },
+      { id: "glsl-plot-pow", title: "曲げる: pow で累乗" },
+      { id: "glsl-plot-smoothstep", title: "S 字にする: smoothstep" },
+    ],
+  },
+  {
     id: "glsl-color",
     domain: "glsl",
     title: "色と混色",
@@ -329,6 +341,18 @@ export const TRACKS: readonly TrackMeta[] = [
     ],
   },
   {
+    id: "three-space",
+    domain: "three",
+    title: "ローカル座標とワールド座標",
+    summary: "親子にした物の「親から見た位置」と「世界での位置」を行き来する。getWorldPosition、見た目を変えずに親を替える attach、行列を掛ける順番。",
+    icon: "🪆",
+    lessons: [
+      { id: "three-world-position", title: "世界のどこにある？: getWorldPosition" },
+      { id: "three-attach", title: "見た目を変えずに親を替える: attach" },
+      { id: "three-matrix-order", title: "行列を掛ける順番: 動かしてから回す" },
+    ],
+  },
+  {
     id: "three-camera",
     domain: "three",
     title: "カメラ",
@@ -489,6 +513,7 @@ const LOADERS: Readonly<Record<string, () => Promise<{ readonly track: Track }>>
   "glsl-basics": () => import("./tracks/glsl-basics.js"),
   "glsl-uv": () => import("./tracks/glsl-uv.js"),
   "glsl-shapes": () => import("./tracks/glsl-shapes.js"),
+  "glsl-plot": () => import("./tracks/glsl-plot.js"),
   "glsl-color": () => import("./tracks/glsl-color.js"),
   "glsl-motion": () => import("./tracks/glsl-motion.js"),
   "glsl-patterns": () => import("./tracks/glsl-patterns.js"),
@@ -511,6 +536,7 @@ const LOADERS: Readonly<Record<string, () => Promise<{ readonly track: Track }>>
   "three-light": () => import("./tracks/three-light.js"),
   "three-transform": () => import("./tracks/three-transform.js"),
   "three-math": () => import("./tracks/three-math.js"),
+  "three-space": () => import("./tracks/three-space.js"),
   "three-camera": () => import("./tracks/three-camera.js"),
   "three-animation": () => import("./tracks/three-animation.js"),
   "three-data": () => import("./tracks/three-data.js"),

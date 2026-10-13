@@ -123,8 +123,7 @@ export const track: Track = {
   id: "glsl-rm-shading",
   domain: "glsl",
   title: "レイマーチングの仕上げ",
-  summary:
-    "影のふちをぼかし（ソフトシャドウ）、物のすき間を暗くし（アンビエントオクルージョン）、床に映り込みを足して（reflect）、レイマーチングの絵を仕上げる。",
+  summary: "影のふちをぼかし（ソフトシャドウ）、物のすき間を暗くし（アンビエントオクルージョン）、床に映り込みを足して（reflect）、レイマーチングの絵を仕上げる。",
   icon: "🌗",
   lessons: [
     {

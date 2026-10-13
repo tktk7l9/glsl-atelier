@@ -43,7 +43,7 @@ export const track: Track = {
       challenge: {
         starterCode:
           LEAF_START +
-          "// いまは直線のひし形。上側と下側を、quadraticCurveTo の曲線にしよう\n" +
+          "// いまは直線のひし形。上側と下側を、制御点のほうへふくらむ曲線にしよう\n" +
           "shape.lineTo(0, 0.4);\n" +
           "shape.lineTo(1.6, 0);\n" +
           "shape.lineTo(0, -0.4);\n" +
@@ -93,7 +93,7 @@ export const track: Track = {
       challenge: {
         starterCode:
           "const shape = new THREE.Shape();\n" +
-          "// いまは四角い板。absarc で円弧を描いてから中心へ線を引き、真上の 4分の1 が欠けたパイにしよう\n" +
+          "// いまは四角い板。円弧を描いてから中心へ線を引き、真上の 4分の1 が欠けたパイにしよう\n" +
           "shape.moveTo(-1.6, -1.6);\n" +
           "shape.lineTo(1.6, -1.6);\n" +
           "shape.lineTo(1.6, 1.6);\n" +
@@ -142,7 +142,7 @@ export const track: Track = {
         "<code>ShapeGeometry</code> や <code>ExtrudeGeometry</code> は穴の内側を面にしないので、ドーナツ型の板、窓のある壁、ナットやワッシャーなどが作れます。" +
         "穴の輪郭を Shape として <code>ShapeGeometry</code> に一緒に渡すと、穴ではなく<b>もう 1枚の板</b>として重なってしまいます。</p>",
       challenge: {
-        starterCode: RING_START + "// ここで、半径 0.8 の円の穴（THREE.Path）を作って shape.holes に加え、ドーナツ型にしよう\n" + RING_MESH,
+        starterCode: RING_START + "// ここで、半径 0.8 の円の輪郭（THREE.Path）を作り、板の穴として加えて、ドーナツ型にしよう\n" + RING_MESH,
         task: "半径 0.8 の円を THREE.Path の absarc で描いて shape.holes.push で加え、真ん中に穴のあいたドーナツ型の板にしよう。",
         validators: [
           { kind: "noError" },

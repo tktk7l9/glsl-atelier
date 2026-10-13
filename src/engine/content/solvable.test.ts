@@ -569,6 +569,37 @@ const graphOf = (x: number, y: number, f: (x: number) => number): RGB => {
   return mixRgb(grey(clamp(fy, 0, 1)), GRAPH_LINE, lineAt(Math.abs(y - fy)));
 };
 
+/** The line lessons: a line of half-width 0.02 (soft to 0.03) over the dark ground. */
+const LINE_BG: RGB = [0.05, 0.07, 0.15];
+const LINE_INK: RGB = [0.3, 0.9, 1];
+const inked = (d: number): RGB => mixRgb(LINE_BG, LINE_INK, 1 - smoothstep(0.02, 0.03, d));
+type P2 = readonly [number, number];
+/** Distance from p to the segment a-b; `h` maps the projection p·(b-a)/|b-a|² (or p·(b-a) undivided). */
+function segmentDistance(p: P2, a: P2, b: P2, h = (t: number) => clamp(t, 0, 1), divide = true): number {
+  const [pax, pay] = [p[0] - a[0], p[1] - a[1]];
+  const [bax, bay] = [b[0] - a[0], b[1] - a[1]];
+  const dot = pax * bax + pay * bay;
+  const t = h(divide ? dot / (bax * bax + bay * bay) : dot);
+  return length(pax - bax * t, pay - bay * t);
+}
+const SEG_A: P2 = [0.1458, 0.3125];
+const SEG_B: P2 = [0.8958, 0.6875];
+const TRI: readonly [P2, P2, P2] = [[0.1458, 0.2292], [0.8125, 0.2292], [0.4792, 0.8958]];
+const triangleSides = (x: number, y: number): [number, number, number] => [
+  segmentDistance([x, y], TRI[0], TRI[1]),
+  segmentDistance([x, y], TRI[1], TRI[2]),
+  segmentDistance([x, y], TRI[2], TRI[0]),
+];
+/** The polygon lesson: filled where `measure` (from the centred point) is under 0.6. */
+const POLY_FILL: RGB = [1, 0.75, 0.3];
+function polygonFill(x: number, y: number, n = 6, half = 0.5): RGB {
+  const [px, py] = centred(x, y);
+  const r = 6.2832 / n;
+  const a = Math.atan2(py, px);
+  const d = Math.cos(Math.floor(half + a / r) * r - a) * length(px, py);
+  return mixRgb(LINE_BG, POLY_FILL, 1 - step(0.6, d));
+}
+
 /** JS ports of (starter, solution) for the shader lessons added in 2026-10. */
 const SHADER_MODELS: Record<string, { starter: Shade; solution: Shade }> = {
   "glsl-repeat-dots": {
@@ -846,6 +877,22 @@ const SHADER_MODELS: Record<string, { starter: Shade; solution: Shade }> = {
     starter: (x, y) => graphOf(x, y, (v) => v),
     solution: (x, y) => graphOf(x, y, (v) => smoothstep(0.2, 0.8, v)),
   },
+  // 2026-10, twelfth batch.
+  "glsl-segment": {
+    starter: (x, y) => inked(length(x - SEG_A[0], y - SEG_A[1])),
+    solution: (x, y) => inked(segmentDistance([x, y], SEG_A, SEG_B)),
+  },
+  "glsl-triangle-outline": {
+    starter: (x, y) => inked(triangleSides(x, y)[0]),
+    solution: (x, y) => inked(Math.min(...triangleSides(x, y))),
+  },
+  "glsl-polygon": {
+    starter: (x, y) => {
+      const [px, py] = centred(x, y);
+      return mixRgb(LINE_BG, POLY_FILL, 1 - step(0.6, length(px, py)));
+    },
+    solution: (x, y) => polygonFill(x, y),
+  },
 };
 
 describe("shader lessons modelled on the grader's sample grid", () => {
@@ -1101,6 +1148,22 @@ const SHADER_NEAR_MISSES: Record<string, ReadonlyArray<readonly [string, Shade]>
     ["smoothstep(0.8, 0.2, st.x): falling", (x, y) => graphOf(x, y, (v) => smoothstep(0.8, 0.2, v))],
     ["smoothstep(0.0, 1.0, st.x)", (x, y) => graphOf(x, y, (v) => smoothstep(0, 1, v))],
   ],
+  // 2026-10, twelfth batch.
+  "glsl-segment": [
+    ["without clamp (the whole line through a and b)", (x, y) => inked(segmentDistance([x, y], SEG_A, SEG_B, (t) => t))],
+    ["not divided by dot(ba, ba)", (x, y) => inked(segmentDistance([x, y], SEG_A, SEG_B, (t) => clamp(t, 0, 1), false))],
+    ["the distance to b (h = 1)", (x, y) => inked(length(x - SEG_B[0], y - SEG_B[1]))],
+  ],
+  "glsl-triangle-outline": [
+    ["two sides (c to a missing)", (x, y) => inked(Math.min(...triangleSides(x, y).slice(0, 2)))],
+    ["max instead of min", (x, y) => inked(Math.max(...triangleSides(x, y)))],
+    ["the three added up", (x, y) => inked(triangleSides(x, y).reduce((sum, d) => sum + d, 0))],
+  ],
+  "glsl-polygon": [
+    ["5 sides", (x, y) => polygonFill(x, y, 5)],
+    ["floor(a / r) without + 0.5 (turned half a side)", (x, y) => polygonFill(x, y, 6, 0)],
+    ["8 sides", (x, y) => polygonFill(x, y, 8)],
+  ],
 };
 
 describe("shader near misses are rejected", () => {
@@ -1211,6 +1274,10 @@ const SHADER_VARIANTS: Record<string, ReadonlyArray<readonly [string, Shade]>> =
         }),
     ],
   ],
+  // 2026-10, twelfth batch.
+  "glsl-segment": [["distance(p, a + ba * h)", (x, y) => inked(segmentDistance([x, y], SEG_A, SEG_B))]],
+  "glsl-triangle-outline": [["min(min(d1, d2), d3)", (x, y) => inked(Math.min(Math.min(...triangleSides(x, y).slice(0, 2)), triangleSides(x, y)[2]))]],
+  "glsl-polygon": [["the angle folded with mod", (x, y) => polygonFill(x, y)]],
 };
 
 describe("shader variants are accepted", () => {
@@ -1698,6 +1765,9 @@ const FLAT_LESSONS = [
   "three-camera-angle",
   "three-camera-fov",
   "three-raycast",
+  "three-box-size",
+  "three-box-center",
+  "three-fit-camera",
   "three-rotate",
   "three-keyframes",
   "three-points",
@@ -1793,6 +1863,10 @@ const HEART_MATERIAL = "{ map: tex, alphaTest: 0.5 }";
 const WORLD_LINE = "tip.getWorldPosition(flag.position);";
 const ATTACH_LINE = "turntable.attach(ball);";
 const ORDER_LINE = "m.multiplyMatrices(rotate, move);";
+/** Lines of the twelfth-batch scene solutions that the edits below change. */
+const FIT_HEIGHT_LINE = "snowman.scale.setScalar(2 / size.y);";
+const CENTRE_LINE = "house.position.sub(center);";
+const DISTANCE_LINE = "camera.position.z = (size.y / 2) / Math.tan(halfFov) * 1.15;";
 
 /** Plausible wrong answers to the 2026-10 (third to sixth batch) unlit scene
  *  lessons, as edits of the solution; each must be rejected at both preview
@@ -1986,6 +2060,22 @@ const SCENE_NEAR_MISSES: Record<string, ReadonlyArray<readonly [string, (solutio
     ["copy(move).multiply(rotate)", (s) => s.replace(ORDER_LINE, "m.copy(move).multiply(rotate);")],
     ["copy(rotate).premultiply(move)", (s) => s.replace(ORDER_LINE, "m.copy(rotate).premultiply(move);")],
   ],
+  // 2026-10, twelfth batch.
+  "three-box-size": [
+    ["size.y / 2 (the inverse: bigger)", (s) => s.replace(FIT_HEIGHT_LINE, "snowman.scale.setScalar(size.y / 2);")],
+    ["2 / size.x (the width, not the height)", (s) => s.replace(FIT_HEIGHT_LINE, "snowman.scale.setScalar(2 / size.x);")],
+    ["only the height scaled (squashed)", (s) => s.replace(FIT_HEIGHT_LINE, "snowman.scale.y = 2 / size.y;")],
+  ],
+  "three-box-center": [
+    ["copy(center) (moved further away)", (s) => s.replace(CENTRE_LINE, "house.position.copy(center);")],
+    ["only x centred", (s) => s.replace(CENTRE_LINE, "house.position.x -= center.x;")],
+  ],
+  "three-fit-camera": [
+    ["no margin (exactly the height)", (s) => s.replace(DISTANCE_LINE, "camera.position.z = (size.y / 2) / Math.tan(halfFov);")],
+    ["the whole height, not half", (s) => s.replace(DISTANCE_LINE, "camera.position.z = size.y / Math.tan(halfFov) * 1.15;")],
+    ["the field of view in degrees", (s) => s.replace("const halfFov = THREE.MathUtils.degToRad(camera.fov / 2);", "const halfFov = camera.fov / 2;  // THREE.MathUtils.degToRad")],
+    ["the whole field of view, not half", (s) => s.replace("degToRad(camera.fov / 2)", "degToRad(camera.fov)")],
+  ],
 };
 
 /** Other correct ways to write the fifth- and sixth-batch unlit scene lessons;
@@ -2131,6 +2221,26 @@ const SCENE_VARIANTS: Record<string, ReadonlyArray<readonly [string, (solution: 
     ["copy(rotate).multiply(move)", (s) => s.replace(ORDER_LINE, "m.copy(rotate).multiply(move);")],
     ["copy(move).premultiply(rotate)", (s) => s.replace(ORDER_LINE, "m.copy(move).premultiply(rotate);")],
     ["multiply(rotate).multiply(move) on the identity", (s) => s.replace(ORDER_LINE, "m.multiply(rotate).multiply(move);")],
+  ],
+  // 2026-10, twelfth batch.
+  "three-box-size": [
+    ["multiplyScalar", (s) => s.replace(FIT_HEIGHT_LINE, "snowman.scale.multiplyScalar(2 / size.y);")],
+    [
+      "the height from box.max.y - box.min.y",
+      (s) =>
+        s.replace(
+          "const size = new THREE.Box3().setFromObject(snowman).getSize(new THREE.Vector3());",
+          "const box = new THREE.Box3().setFromObject(snowman);\nconst size = { y: box.max.y - box.min.y };",
+        ),
+    ],
+  ],
+  "three-box-center": [
+    ["copy(center).negate()", (s) => s.replace(CENTRE_LINE, "house.position.copy(center).negate();")],
+    ["set(-center.x, -center.y, -center.z)", (s) => s.replace(CENTRE_LINE, "house.position.set(-center.x, -center.y, -center.z);")],
+  ],
+  "three-fit-camera": [
+    ["camera.position.set(0, 0, distance)", (s) => s.replace(DISTANCE_LINE, "const distance = (size.y / 2) / Math.tan(halfFov) * 1.15;\ncamera.position.set(0, 0, distance);")],
+    ["the angle in radians by hand", (s) => s.replace("THREE.MathUtils.degToRad(camera.fov / 2)", "camera.fov * Math.PI / 360")],
   ],
 };
 

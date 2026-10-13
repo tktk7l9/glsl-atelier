@@ -19,7 +19,7 @@ const fillMain = (body: string, colour: string): string =>
   "  gl_FragColor = vec4(col, 1.0);\n}";
 
 const roundMain = (line: string): string =>
-  fillMain("  vec2 b = vec2(0.66, 0.5);  // 半分の大きさ\n" + "  float r = 0.3;             // 角の丸みの半径\n" + line, "vec3(0.95, 0.55, 0.25)");
+  fillMain("  vec2 b = vec2(0.7, 0.5);   // 半分の大きさ\n" + "  float r = 0.3;             // 角の丸みの半径\n" + line, "vec3(0.95, 0.55, 0.25)");
 
 const morphMain = (line: string): string =>
   fillMain(
@@ -66,7 +66,7 @@ export const track: Track = {
             of: [
               { kind: "pixelApprox", x: 0.1875, y: 0.2708, rgb: BG },
               { kind: "pixelApprox", x: 0.8125, y: 0.7292, rgb: BG },
-              { kind: "pixelApprox", x: 0.8542, y: 0.4792, rgb: BG },
+              { kind: "pixelApprox", x: 0.8958, y: 0.4792, rgb: BG },
             ],
             message:
               "角が丸くなっていないか、形が大きすぎます。先に r だけ小さい箱 sdBox(p, b - r) にしてから r を引きましょう（sdBox(p, b) - r だと、まわりが r だけふくらみます）",

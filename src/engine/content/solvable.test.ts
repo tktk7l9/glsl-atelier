@@ -1111,8 +1111,8 @@ const SHADER_MODELS: Record<string, { starter: Shade; solution: Shade }> = {
   },
   // 2026-10, sixteenth batch.
   "glsl-round-box": {
-    starter: (x, y) => roundBox(x, y, (px, py) => sdBox(px, py, 0.66, 0.5)),
-    solution: (x, y) => roundBox(x, y, (px, py) => sdBox(px, py, 0.66 - 0.3, 0.5 - 0.3) - 0.3),
+    starter: (x, y) => roundBox(x, y, (px, py) => sdBox(px, py, 0.7, 0.5)),
+    solution: (x, y) => roundBox(x, y, (px, py) => sdBox(px, py, 0.7 - 0.3, 0.5 - 0.3) - 0.3),
   },
   "glsl-sdf-morph": {
     starter: (x, y) => morphed(x, y, (circle) => circle),
@@ -1449,10 +1449,10 @@ const SHADER_NEAR_MISSES: Record<string, ReadonlyArray<readonly [string, Shade]>
   ],
   // 2026-10, sixteenth batch.
   "glsl-round-box": [
-    ["sdBox(p, b) - r (grown by r)", (x, y) => roundBox(x, y, (px, py) => sdBox(px, py, 0.66, 0.5) - 0.3)],
-    ["sdBox(p, b - r) (shrunk, still sharp)", (x, y) => roundBox(x, y, (px, py) => sdBox(px, py, 0.66 - 0.3, 0.5 - 0.3))],
-    ["sdBox(p, b + r) - r", (x, y) => roundBox(x, y, (px, py) => sdBox(px, py, 0.66 + 0.3, 0.5 + 0.3) - 0.3)],
-    ["sdBox(p, b - r) + r (shrunk twice)", (x, y) => roundBox(x, y, (px, py) => sdBox(px, py, 0.66 - 0.3, 0.5 - 0.3) + 0.3)],
+    ["sdBox(p, b) - r (grown by r)", (x, y) => roundBox(x, y, (px, py) => sdBox(px, py, 0.7, 0.5) - 0.3)],
+    ["sdBox(p, b - r) (shrunk, still sharp)", (x, y) => roundBox(x, y, (px, py) => sdBox(px, py, 0.7 - 0.3, 0.5 - 0.3))],
+    ["sdBox(p, b + r) - r", (x, y) => roundBox(x, y, (px, py) => sdBox(px, py, 0.7 + 0.3, 0.5 + 0.3) - 0.3)],
+    ["sdBox(p, b - r) + r (shrunk twice)", (x, y) => roundBox(x, y, (px, py) => sdBox(px, py, 0.7 - 0.3, 0.5 - 0.3) + 0.3)],
   ],
   "glsl-sdf-morph": [
     ["min (the union: the square)", (x, y) => morphed(x, y, Math.min)],
@@ -1621,7 +1621,7 @@ const SHADER_VARIANTS: Record<string, ReadonlyArray<readonly [string, Shade]>> =
       "the box formula written out with b - r",
       (x, y) =>
         roundBox(x, y, (px, py) => {
-          const qx = Math.abs(px) - 0.66 + 0.3;
+          const qx = Math.abs(px) - 0.7 + 0.3;
           const qy = Math.abs(py) - 0.5 + 0.3;
           return length(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - 0.3;
         }),

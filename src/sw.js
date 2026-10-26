@@ -47,6 +47,16 @@ self.addEventListener("activate", (event) => {
   );
 });
 
+/** Cache a successful response. The worker may be stopped once the response
+ *  has been handed over, so the write is registered with waitUntil; a failed
+ *  write (quota, private mode) only costs the offline copy. */
+function store(req, res) {
+  return caches
+    .open(CACHE)
+    .then((c) => c.put(req, res))
+    .catch(() => undefined);
+}
+
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   if (req.method !== "GET" || new URL(req.url).origin !== location.origin) return;
@@ -57,10 +67,7 @@ self.addEventListener("fetch", (event) => {
         .then((res) => {
           // Only a successful response may become an offline fallback; a 404 or
           // 5xx page must never be what an offline navigation shows.
-          if (res.ok) {
-            const copy = res.clone();
-            caches.open(CACHE).then((c) => c.put(req, copy));
-          }
+          if (res.ok) event.waitUntil(store(req, res.clone()));
           return res;
         })
         .catch(() =>
@@ -79,10 +86,7 @@ self.addEventListener("fetch", (event) => {
       (hit) =>
         hit ||
         fetch(req).then((res) => {
-          if (res.ok) {
-            const copy = res.clone();
-            caches.open(CACHE).then((c) => c.put(req, copy));
-          }
+          if (res.ok) event.waitUntil(store(req, res.clone()));
           return res;
         }),
     ),

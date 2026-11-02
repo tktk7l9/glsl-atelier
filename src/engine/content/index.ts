@@ -181,6 +181,18 @@ export const TRACKS: readonly TrackMeta[] = [
     ],
   },
   {
+    id: "glsl-fbm",
+    domain: "glsl",
+    title: "ノイズを重ねる",
+    summary: "大きさを変えたノイズを重ねて雲にし（fBm）、折り返して山の稜線にし、座標をノイズでずらして流れる模様にする。",
+    icon: "☁️",
+    lessons: [
+      { id: "glsl-fbm", title: "雲をつくる: fBm" },
+      { id: "glsl-ridged", title: "山の稜線: ノイズを折り返す" },
+      { id: "glsl-domain-warp", title: "流れる模様: 座標をノイズでずらす" },
+    ],
+  },
+  {
     id: "glsl-tiling",
     domain: "glsl",
     title: "タイルを敷きつめる",
@@ -370,6 +382,19 @@ export const TRACKS: readonly TrackMeta[] = [
     ],
   },
   {
+    id: "three-shader",
+    domain: "three",
+    title: "シェーダーを使いこなす",
+    summary: "varying で頂点から色へ値を渡し、頂点シェーダーで形を曲げ、sampler2D で画像を読み、GLSL ES 3.00 に書きかえる。",
+    icon: "🧪",
+    lessons: [
+      { id: "three-varying", title: "頂点から色へ渡す: varying" },
+      { id: "three-vertex-wave", title: "頂点シェーダーで曲げる: position をずらす" },
+      { id: "three-shader-texture", title: "シェーダーで画像を読む: sampler2D" },
+      { id: "three-glsl3", title: "新しい書き方へ: GLSL ES 3.00" },
+    ],
+  },
+  {
     id: "three-light",
     domain: "three",
     title: "ライティング",
@@ -383,6 +408,18 @@ export const TRACKS: readonly TrackMeta[] = [
       { id: "three-spot-light", title: "スポットライト: angle と penumbra" },
       { id: "three-emissive", title: "自分で光る: emissive" },
       { id: "three-roughness", title: "つやを出す: roughness" },
+    ],
+  },
+  {
+    id: "three-finish",
+    domain: "three",
+    title: "映りと仕上げ",
+    summary: "明るすぎる光をトーンマッピングで画面に収め、scene.environment でまわりの景色を映しこみ、クリアコートで塗装のつやを足す。",
+    icon: "🪩",
+    lessons: [
+      { id: "three-tone-mapping", title: "光を画面に収める: toneMapping" },
+      { id: "three-environment", title: "まわりを映す: scene.environment" },
+      { id: "three-clearcoat", title: "塗装のつや: clearcoat" },
     ],
   },
   {
@@ -605,6 +642,31 @@ export const TRACKS: readonly TrackMeta[] = [
     ],
   },
   {
+    id: "three-render-target",
+    domain: "three",
+    title: "絵をテクスチャに描く",
+    summary: "WebGLRenderTarget にシーンを描いて板に貼り、画面全体のポストエフェクトをかけ、深度テクスチャから距離を読み取る。",
+    icon: "🎞️",
+    lessons: [
+      { id: "three-rt-monitor", title: "画面の中の画面: WebGLRenderTarget" },
+      { id: "three-rt-post", title: "画面全体にかける: ポストエフェクト" },
+      { id: "three-rt-depth", title: "距離を読む: 深度テクスチャ" },
+    ],
+  },
+  {
+    id: "three-visibility",
+    domain: "three",
+    title: "重なりと見え方を決める",
+    summary: "光を足し算で重ね、描く順番で手前に出し、レイヤーでカメラごとに隠し、距離に合わせて形を替える。",
+    icon: "🧿",
+    lessons: [
+      { id: "three-additive", title: "光を足す: AdditiveBlending" },
+      { id: "three-render-order", title: "壁の向こうを見せる: depthTest と renderOrder" },
+      { id: "three-layers", title: "カメラごとに隠す: layers" },
+      { id: "three-lod", title: "遠くは軽く: LOD" },
+    ],
+  },
+  {
     id: "three-atmosphere",
     domain: "three",
     title: "空気感: 霧と影",
@@ -668,6 +730,7 @@ const LOADERS: Readonly<Record<string, () => Promise<{ readonly track: Track }>>
   "glsl-polar": () => import("./tracks/glsl-polar.js"),
   "glsl-hsv": () => import("./tracks/glsl-hsv.js"),
   "glsl-noise": () => import("./tracks/glsl-noise.js"),
+  "glsl-fbm": () => import("./tracks/glsl-fbm.js"),
   "glsl-tiling": () => import("./tracks/glsl-tiling.js"),
   "glsl-fractal": () => import("./tracks/glsl-fractal.js"),
   "glsl-post": () => import("./tracks/glsl-post.js"),
@@ -683,7 +746,9 @@ const LOADERS: Readonly<Record<string, () => Promise<{ readonly track: Track }>>
   "three-basics": () => import("./tracks/three-basics.js"),
   "three-geometry": () => import("./tracks/three-geometry.js"),
   "three-material": () => import("./tracks/three-material.js"),
+  "three-shader": () => import("./tracks/three-shader.js"),
   "three-light": () => import("./tracks/three-light.js"),
+  "three-finish": () => import("./tracks/three-finish.js"),
   "three-transform": () => import("./tracks/three-transform.js"),
   "three-pivot": () => import("./tracks/three-pivot.js"),
   "three-math": () => import("./tracks/three-math.js"),
@@ -702,6 +767,8 @@ const LOADERS: Readonly<Record<string, () => Promise<{ readonly track: Track }>>
   "three-shape": () => import("./tracks/three-shape.js"),
   "three-path": () => import("./tracks/three-path.js"),
   "three-lines-sprites": () => import("./tracks/three-lines-sprites.js"),
+  "three-render-target": () => import("./tracks/three-render-target.js"),
+  "three-visibility": () => import("./tracks/three-visibility.js"),
   "three-atmosphere": () => import("./tracks/three-atmosphere.js"),
 };
 

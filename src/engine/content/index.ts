@@ -531,6 +531,9 @@ export const TRACKS: readonly TrackMeta[] = [
     lessons: [
       { id: "three-rotate", title: "回転させる: rotation" },
       { id: "three-keyframes", title: "キーフレームで動かす: AnimationClip" },
+      { id: "three-time-scale", title: "速さを変える: timeScale" },
+      { id: "three-loop-once", title: "1回で止める: LoopOnce と clampWhenFinished" },
+      { id: "three-crossfade", title: "なめらかに切り替える: crossFadeTo" },
     ],
   },
   {

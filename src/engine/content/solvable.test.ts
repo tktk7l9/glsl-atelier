@@ -2305,6 +2305,9 @@ const FLAT_LESSONS = [
   "three-clone-material",
   "three-rotate",
   "three-keyframes",
+  "three-time-scale",
+  "three-loop-once",
+  "three-crossfade",
   "three-points",
   "three-data-texture",
   "three-texture-repeat",
@@ -2439,6 +2442,19 @@ const TURN_UP = "arrow.rotation.z = Math.PI / 2;";
  *  lessons, as edits of the solution; each must be rejected at both preview
  *  shapes. */
 const SCENE_NEAR_MISSES: Record<string, ReadonlyArray<readonly [string, (solution: string) => string]>> = {
+  "three-time-scale": [
+    ["half speed", (s) => s.replace("timeScale = 2", "timeScale = 0.5")],
+    ["no change at all", (s) => s.replace("timeScale = 2", "timeScale = 1")],
+  ],
+  "three-loop-once": [
+    ["LoopOnce without clamping: the ball goes back", (s) => s.replace("action.clampWhenFinished = true;", "")],
+    ["clamping while it still repeats", (s) => s.replace("action.setLoop(THREE.LoopOnce);", "")],
+  ],
+  "three-crossfade": [
+    ["the fading-in clip is never played", (s) => s.replace("high.play();", "")],
+    ["the fade is too slow", (s) => s.replace("crossFadeTo(high, 1)", "crossFadeTo(high, 4)")],
+    ["cutting straight to high", (s) => s.replace("low.crossFadeTo(high, 1);", "low.stop();")],
+  ],
   "three-clipping": [
     ["planes without renderer.localClippingEnabled", (s) => s.replace("renderer.localClippingEnabled = true;\n", "")],
     ["the plane facing up (keeps the top half)", (s) => s.replace("Vector3(0, -1, 0)", "Vector3(0, 1, 0)")],

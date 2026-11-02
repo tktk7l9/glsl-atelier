@@ -1,8 +1,8 @@
 # Header rules for Cloudflare Workers static assets, ported from the headers in
-# vercel.json (the same content is also kept on the Vercel side).
+# the former vercel.json (removed after the Cloudflare migration).
 # https://developers.cloudflare.com/workers/static-assets/headers/
 #
-# ⚠️ vercel.json excluded the sandbox with a negative lookahead `/((?!sandbox\.html).*)`,
+# ⚠️ The former vercel.json excluded the sandbox with a negative lookahead `/((?!sandbox\.html).*)`,
 # but _headers has no such syntax, and when several rules match, their values are
 # joined with commas (= two CSPs, and the browser takes their intersection, which
 # breaks the sandbox). So `! Header-Name` explicitly strips the earlier rule's value

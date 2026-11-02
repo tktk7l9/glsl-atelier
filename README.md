@@ -86,6 +86,6 @@ Vanilla TypeScript · Vite 8 · Three.js 0.186 · Vitest 5。フレームワー�
 2026-08-11、Vercel 無料枠の超過でアカウントが停止（全プロジェクトが
 `402 DEPLOYMENT_DISABLED`）したため移行した。ビルド成果物は純粋な静的
 ファイルなので Worker スクリプトは無く、`wrangler.jsonc` の `assets` だけで
-配信している。セキュリティヘッダーは `public/_headers`（`vercel.json` の
-`headers` を移植したもの）。`npm run deploy` で build + wrangler deploy。
-Vercel 側の設定も残置してあるので、復旧すれば両方に出せる。
+配信している。セキュリティヘッダーは `public/_headers`（Vercel 時代の `vercel.json` の
+`headers` を移植したもの。`vercel.json` は移行後に削除済み）。`npm run deploy` で
+build + wrangler deploy。

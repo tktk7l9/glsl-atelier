@@ -27,6 +27,12 @@ function fakeRenderer(width = 300, height = 300) {
     shadowMap: { enabled: false, type: THREE.PCFShadowMap as THREE.ShadowMapType },
     localClippingEnabled: false,
     clippingPlanes: [] as THREE.Plane[],
+    toneMapping: THREE.NoToneMapping as THREE.ToneMapping,
+    toneMappingExposure: 1,
+    target: null as unknown,
+    setRenderTarget(target: unknown) {
+      renderer.target = target;
+    },
     clear: [0, 0] as [number, number],
     setClearColor(color: number, alpha: number) {
       renderer.clear = [color, alpha];
@@ -137,15 +143,22 @@ describe("createSceneRunner: a run", () => {
     const { runner, renderer, draws } = fakeRenderer();
     runner.run(
       `${CUBE}renderer.shadowMap.enabled = true;\nrenderer.setClearColor(0xffffff, 1);\n` +
-        "renderer.localClippingEnabled = true;\nrenderer.clippingPlanes = [new THREE.Plane()];\n",
+        "renderer.localClippingEnabled = true;\nrenderer.clippingPlanes = [new THREE.Plane()];\n" +
+        "renderer.toneMapping = THREE.ACESFilmicToneMapping;\nrenderer.toneMappingExposure = 0.5;\n" +
+        "renderer.setRenderTarget(new THREE.WebGLRenderTarget(4, 4));\n",
     );
     expect(draws[0].shadows).toBe(true);
     expect(renderer.localClippingEnabled).toBe(true);
+    expect(renderer.toneMapping).toBe(THREE.ACESFilmicToneMapping);
+    expect(renderer.target).not.toBeNull();
     runner.run(CUBE);
     expect(draws[1].shadows).toBe(false);
     expect(renderer.clear).toEqual([0x05060d, 1]);
     expect(renderer.localClippingEnabled).toBe(false);
     expect(renderer.clippingPlanes).toEqual([]);
+    expect(renderer.toneMapping).toBe(THREE.NoToneMapping);
+    expect(renderer.toneMappingExposure).toBe(1);
+    expect(renderer.target).toBeNull();
   });
 });
 

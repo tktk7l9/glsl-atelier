@@ -135,7 +135,7 @@ export const track: Track = {
       title: "数を決めて並べる: 番号を clamp で区切る",
       explanation:
         "<p><code>mod</code> で座標をくり返すと、形はどこまでも並びます。<b>数を決めて</b>並べたいときは、いちばん近い点の<b>番号</b>を求め、" +
-        "その番号を <code>clamp</code> で区切ります。番号は <code>floor(p / s + 0.5)</code> で求まり（四捨五入。WebGL の GLSL には round がありません）、" +
+        "その番号を <code>clamp</code> で区切ります。番号は <code>floor(p / s + 0.5)</code> で求まり（四捨五入。このアプリのシェーダーは WebGL 1 用の GLSL ES 1.00 で、round がありません。WebGL 2 の GLSL ES 3.00 には round があります）、" +
         "間隔 s 倍して p から引けば、その点が原点に来ます。番号を横 -2〜2、縦 -1〜1 に区切ると、はみ出した所は端の点からの距離になるので、" +
         "点は 5 × 3 個だけになります。</p>",
       challenge: {

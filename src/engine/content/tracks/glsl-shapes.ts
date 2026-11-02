@@ -108,7 +108,7 @@ export const track: Track = {
         "小さな画面ではギザギザが残ります。ふちを<b>ちょうど 1ピクセルぶん</b>だけぼかすには、「となりのピクセルへ進むと値がどれだけ変わるか」を" +
         "知る必要があります。それを返すのが <code>fwidth(d)</code> です。<code>w = fwidth(d)</code> として <code>smoothstep(-w, w, d)</code> で" +
         "塗り分ければ、どの大きさの画面でも、ふちだけがなめらかになります（<b>アンチエイリアス</b>）。WebGL 1 では <code>fwidth</code> は拡張機能なので、" +
-        "シェーダーの 1行目に <code>#extension GL_OES_standard_derivatives : enable</code> が要ります（書いてあります）。</p>",
+        "シェーダーの 1行目に <code>#extension GL_OES_standard_derivatives : enable</code> が要ります（書いてあります）。WebGL 2 の <code>#version 300 es</code> なら、拡張機能なしで使えます。</p>",
       challenge: {
         starterCode: shDerivatives(
           discMain(

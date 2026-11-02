@@ -24,6 +24,9 @@ export type SceneRenderer = Pick<
   | "shadowMap"
   | "localClippingEnabled"
   | "clippingPlanes"
+  | "toneMapping"
+  | "toneMappingExposure"
+  | "setRenderTarget"
   | "setClearColor"
   | "setPixelRatio"
   | "setSize"
@@ -70,7 +73,8 @@ export function createSceneRunner(renderer: SceneRenderer): SceneRunner {
   let fitted = { width: 0, height: 0, ratio: 0 };
 
   /** The renderer is shared by every run, but learner code may flip its
-   *  switches (shadow maps, clipping, clear colour); put them back so one run
+   *  switches (shadow maps, clipping, clear colour, tone mapping, the render
+   *  target); put them back so one run
    *  cannot leak into the next and a lesson is judged on its own code. */
   function resetRenderer(): void {
     renderer.setClearColor(0x05060d, 1);
@@ -78,6 +82,9 @@ export function createSceneRunner(renderer: SceneRenderer): SceneRunner {
     renderer.shadowMap.type = THREE.PCFShadowMap;
     renderer.localClippingEnabled = false;
     renderer.clippingPlanes = [];
+    renderer.toneMapping = THREE.NoToneMapping;
+    renderer.toneMappingExposure = 1;
+    renderer.setRenderTarget(null);
   }
   resetRenderer();
 

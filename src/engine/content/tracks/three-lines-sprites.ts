@@ -39,8 +39,8 @@ export const track: Track = {
       title: "点をつないで線を引く: Line",
       explanation:
         "<p>折れ線グラフや軌跡のような<b>線</b>は <code>Line</code> で描きます。<code>new THREE.BufferGeometry().setFromPoints(点の配列)</code> で" +
-        "点をジオメトリにし、<code>LineBasicMaterial</code> と組み合わせると、点が順番に 1本の線でつながります。線の太さは WebGL ではほぼ必ず " +
-        "1 ピクセルなので、太い線が欲しいときは別の方法（細長い形など）を使います。最初と最後もつなぎたいときは <code>LineLoop</code>、" +
+        "点をジオメトリにし、<code>LineBasicMaterial</code> と組み合わせると、点が順番に 1本の線でつながります。WebGL の描画ではマテリアルの <code>linewidth</code> は" +
+        "無視され、線はいつも 1 ピクセルなので、太い線が欲しいときは別の方法（細長い形など）を使います。最初と最後もつなぎたいときは <code>LineLoop</code>、" +
         "2点ずつ別々の線にしたいときは <code>LineSegments</code> です。</p>",
       challenge: {
         starterCode: CHART_SCENE + "\n// ここで、points を順につなぐ水色の Line を作って scene に追加しよう\n",

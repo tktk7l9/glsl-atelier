@@ -88,6 +88,36 @@ const centred = (x: number, y: number): [number, number] => [x * 2 - 1, y * 2 - 
 const random = (x: number, y: number): number =>
   fract(Math.sin(x * 12.9898 + y * 78.233) * 43758.5453);
 
+/** The sine-free hash and smooth noise of the fBm track, and its octave sum.
+ *  `ampStep` and `freqStep` are the factors a wrong answer might get wrong. */
+const ignHash = (x: number, y: number): number => fract(52.9829189 * fract(x * 0.06711056 + y * 0.00583715));
+function smoothNoise(x: number, y: number): number {
+  const ix = Math.floor(x);
+  const iy = Math.floor(y);
+  const ux = smoothstep(0, 1, x - ix);
+  const uy = smoothstep(0, 1, y - iy);
+  return mix(mix(ignHash(ix, iy), ignHash(ix + 1, iy), ux), mix(ignHash(ix, iy + 1), ignHash(ix + 1, iy + 1), ux), uy);
+}
+function fbm(x: number, y: number, octaves = 5, layer = smoothNoise, ampStep = 0.5, freqStep = 2): number {
+  let v = 0;
+  let a = 0.5;
+  let px = x;
+  let py = y;
+  for (let i = 0; i < octaves; i++) {
+    v += a * layer(px, py);
+    px *= freqStep;
+    py *= freqStep;
+    a *= ampStep;
+  }
+  return v;
+}
+const ridge = (x: number, y: number): number => 1 - Math.abs(smoothNoise(x, y) * 2 - 1);
+/** The domain-warp lesson's picture, displaced by `q * strength`. */
+function warpedFbm(x: number, y: number, strength: number): RGB {
+  const [px, py] = [x * 4, y * 4];
+  return grey(fbm(px + fbm(px, py) * strength, py + fbm(px + 5.2, py + 1.3) * strength));
+}
+
 const sdBox = (px: number, py: number, bx: number, by: number): number => {
   const qx = Math.abs(px) - bx;
   const qy = Math.abs(py) - by;
@@ -1162,6 +1192,18 @@ const SHADER_MODELS: Record<string, { starter: Shade; solution: Shade }> = {
     starter: (x, y) => bulbLit(x, y, () => 1),
     solution: (x, y) => bulbLit(x, y, (dist) => 1 / (1 + 2 * dist * dist)),
   },
+  "glsl-fbm": {
+    starter: (x, y) => grey(fbm(x * 4, y * 4, 1)),
+    solution: (x, y) => grey(fbm(x * 4, y * 4)),
+  },
+  "glsl-ridged": {
+    starter: (x, y) => grey(fbm(x * 4, y * 4)),
+    solution: (x, y) => grey(fbm(x * 4, y * 4, 5, ridge)),
+  },
+  "glsl-domain-warp": {
+    starter: (x, y) => grey(fbm(x * 4, y * 4)),
+    solution: (x, y) => warpedFbm(x, y, 2),
+  },
 };
 
 describe("shader lessons modelled on the grader's sample grid", () => {
@@ -1180,6 +1222,23 @@ describe("shader lessons modelled on the grader's sample grid", () => {
  *  lessons; each must be rejected. The source is the solution's, so only the
  *  drawing decides. */
 const SHADER_NEAR_MISSES: Record<string, ReadonlyArray<readonly [string, Shade]>> = {
+  "glsl-fbm": [
+    ["stopping after 2 octaves", (x, y) => grey(fbm(x * 4, y * 4, 2))],
+    ["keeping the amplitude too high (a *= 0.75)", (x, y) => grey(fbm(x * 4, y * 4, 5, smoothNoise, 0.75))],
+    ["never raising the frequency", (x, y) => grey(fbm(x * 4, y * 4, 5, smoothNoise, 0.5, 1))],
+    ["tripling the frequency", (x, y) => grey(fbm(x * 4, y * 4, 5, smoothNoise, 0.5, 3))],
+  ],
+  "glsl-ridged": [
+    ["the fold without turning it over", (x, y) => grey(fbm(x * 4, y * 4, 5, (a, b) => Math.abs(smoothNoise(a, b) * 2 - 1)))],
+    ["turning it over without the fold", (x, y) => grey(fbm(x * 4, y * 4, 5, (a, b) => 1 - smoothNoise(a, b)))],
+  ],
+  "glsl-domain-warp": [
+    ["a warp too weak to see (q * 0.2)", (x, y) => warpedFbm(x, y, 0.2)],
+    ["warping x alone", (x, y) => {
+      const [px, py] = [x * 4, y * 4];
+      return grey(fbm(px + fbm(px, py) * 2, py));
+    }],
+  ],
   "glsl-easing": [
     ["ease-in-out (smoothstep) is still halfway at t = 0.5", (x, y) => easedBall(x, y, (t) => smoothstep(0, 1, t))],
     ["ease-in (t * t) lags behind", (x, y) => easedBall(x, y, (t) => t * t)],
@@ -1752,6 +1811,10 @@ interface RendererState {
   /** What the frame is cleared to when the scene has no Color background. */
   clearColor: THREE.Color;
   setClearColor(color: THREE.ColorRepresentation): void;
+  /** Passes drawn by lesson code need a GPU; here they only have to be callable. */
+  setRenderTarget(target: unknown): void;
+  render(scene: THREE.Object3D, camera: THREE.Camera): void;
+  readonly domElement: { readonly width: number; readonly height: number };
 }
 
 interface SceneRun {
@@ -1802,6 +1865,9 @@ function execScene(code: string, aspect = 1): SceneRun {
     setClearColor(color) {
       this.clearColor.set(color);
     },
+    setRenderTarget() {},
+    render() {},
+    domElement: { width: 400, height: 400 },
   };
   let error: string | null = null;
   // Lesson code may draw on a canvas (CanvasTexture); Node has no DOM.
@@ -1849,6 +1915,8 @@ const sampleable = (map: THREE.Texture): boolean =>
  *  no directional light, which then show their emission plus the ambient and
  *  hemisphere light that falls on their normal. */
 function flatShadable(m: THREE.Material, directLit: boolean): boolean {
+  // The model paints surfaces by distance with plain alpha blending.
+  if (m.blending !== THREE.NormalBlending || !m.depthTest) return false;
   if (m instanceof THREE.MeshBasicMaterial) return !m.wireframe && (m.map === null || sampleable(m.map));
   if (m instanceof THREE.MeshNormalMaterial) return !m.wireframe && !m.flatShading && !m.normalMap && !m.bumpMap;
   if (m instanceof THREE.MeshStandardMaterial) return !directLit && !m.map && !m.emissiveMap && !m.wireframe;
@@ -2033,7 +2101,7 @@ function clipped(renderer: RendererState, material: THREE.Material, point: THREE
  *  materials, shader materials, lines, a textured background…). */
 function flatRender({ scene, camera, renderer }: SceneRun, aspect: number): Sample[] | null {
   const background = scene.background;
-  if (background instanceof THREE.Texture) return null;
+  if (background instanceof THREE.Texture || scene.environment) return null;
   // A Color background is the clear colour, as written (sRGB); anything else
   // (a colour name left as a string) three ignores, and the renderer's own
   // clear colour shows.
@@ -2050,6 +2118,7 @@ function flatRender({ scene, camera, renderer }: SceneRun, aspect: number): Samp
     if (o === scene || o instanceof THREE.Group || o instanceof THREE.Light || o.constructor === THREE.Object3D) return;
     const material = (o as THREE.Mesh).material;
     if ((o instanceof THREE.Mesh || o instanceof THREE.Points || o instanceof THREE.Sprite) && !Array.isArray(material)) {
+      shadable &&= o.layers.isEnabled(0); // the camera's layer; the model has no other cameras
       shadable &&= flatShadable(material, directLit) && vertexColoursKnown(o, material);
       if (o instanceof THREE.Points) points.push(o);
     } else {
@@ -2147,6 +2216,28 @@ describe("Three.js lessons run against the installed three", () => {
   }
 });
 
+/** Wrong answers judged on what the Node run can see; the pixels of these
+ *  lessons need a GPU. Each must fail, and each "true" case must pass. */
+describe("GPU-judged lessons refuse answers that skip the lesson's API", () => {
+  const cases: ReadonlyArray<readonly [string, string, (s: string) => string, boolean]> = [
+    ["three-layers", "hiding it with visible = false", (s) => s.replace("guide.layers.set(1);", "guide.visible = false;"), false],
+    ["three-layers", "removing it from the scene", (s) => s.replace("guide.layers.set(1);", "scene.remove(guide); guide.layers.set(1);"), false],
+    ["three-layers", "another spare layer", (s) => s.replace("guide.layers.set(1);", "guide.layers.set(5);"), true],
+    ["three-glsl3", "leaving the version unset", (s) => s.replace("glslVersion: THREE.GLSL3, ", ""), false],
+    ["three-lod", "no LOD, only meshes", (s) => s.replace(/const lod[\s\S]*scene\.add\(lod\);/, "scene.add(detailed);"), false],
+    ["three-clearcoat", "keeping MeshStandardMaterial", (s) => s.replace("MeshPhysicalMaterial", "MeshStandardMaterial"), false],
+    ["three-rt-depth", "leaving out the view-space step", (s) => s.replace("perspectiveDepthToViewZ(d, uNear, uFar)", "d"), false],
+  ];
+  for (const [id, label, edit, passes] of cases) {
+    it(`${id}: ${label}: ${passes ? "accepted" : "rejected"}`, () => {
+      const { validators, solution } = lessonById(id)!.challenge;
+      const code = edit(solution);
+      expect(code).not.toBe(solution);
+      expect(evaluate(validators.filter((v) => !readsPixels(v)), runScene(code)).passed).toBe(passes);
+    });
+  }
+});
+
 /** Wrong answers to the polyline lesson, judged on the scene graph alone (a
  *  line is never pixel-judged); each must fail, and a LineLoop must pass. */
 describe("the polyline lesson is judged on its geometry", () => {
@@ -2214,6 +2305,9 @@ const FLAT_LESSONS = [
   "three-clone-material",
   "three-rotate",
   "three-keyframes",
+  "three-time-scale",
+  "three-loop-once",
+  "three-crossfade",
   "three-points",
   "three-data-texture",
   "three-texture-repeat",
@@ -2348,6 +2442,19 @@ const TURN_UP = "arrow.rotation.z = Math.PI / 2;";
  *  lessons, as edits of the solution; each must be rejected at both preview
  *  shapes. */
 const SCENE_NEAR_MISSES: Record<string, ReadonlyArray<readonly [string, (solution: string) => string]>> = {
+  "three-time-scale": [
+    ["half speed", (s) => s.replace("timeScale = 2", "timeScale = 0.5")],
+    ["no change at all", (s) => s.replace("timeScale = 2", "timeScale = 1")],
+  ],
+  "three-loop-once": [
+    ["LoopOnce without clamping: the ball goes back", (s) => s.replace("action.clampWhenFinished = true;", "")],
+    ["clamping while it still repeats", (s) => s.replace("action.setLoop(THREE.LoopOnce);", "")],
+  ],
+  "three-crossfade": [
+    ["the fading-in clip is never played", (s) => s.replace("high.play();", "")],
+    ["the fade is too slow", (s) => s.replace("crossFadeTo(high, 1)", "crossFadeTo(high, 4)")],
+    ["cutting straight to high", (s) => s.replace("low.crossFadeTo(high, 1);", "low.stop();")],
+  ],
   "three-clipping": [
     ["planes without renderer.localClippingEnabled", (s) => s.replace("renderer.localClippingEnabled = true;\n", "")],
     ["the plane facing up (keeps the top half)", (s) => s.replace("Vector3(0, -1, 0)", "Vector3(0, 1, 0)")],

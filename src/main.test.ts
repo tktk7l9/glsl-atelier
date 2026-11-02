@@ -104,7 +104,7 @@ describe("shell", () => {
   it("builds the header, catalogue and footer, and honours reduced motion", () => {
     expect(mediaQueries).toEqual(["(prefers-reduced-motion: reduce)"]);
     // The brand navigates, so it is a link to the catalogue (SHIG 11, 60).
-    expect(getByRole(document.body, "link", { name: "GLSL Atelier レッスン一覧へ" }).getAttribute("href")).toBe("#");
+    expect(getByRole(document.body, "link", { name: "GLSL Atelier 手を動かして学ぶ WebGL / Three.js レッスン一覧へ" }).getAttribute("href")).toBe("#");
     expect(getByText(document.body, "手を動かして学ぶ WebGL / Three.js")).toBeTruthy();
     expect(getByRole(document.body, "link", { name: "GitHub" }).getAttribute("href")).toBe(
       "https://github.com/tktk7l9/glsl-atelier",
@@ -163,7 +163,7 @@ describe("routing", () => {
 
   it("returns to the catalogue on the brand link, restoring scroll and focus", async () => {
     scrollTo.mockClear();
-    await userEvent.click(getByRole(document.body, "link", { name: "GLSL Atelier レッスン一覧へ" }));
+    await userEvent.click(getByRole(document.body, "link", { name: "GLSL Atelier 手を動かして学ぶ WebGL / Three.js レッスン一覧へ" }));
     await waitFor(() => expect(location.hash).toBe(""));
     await waitFor(() => expect(main().querySelector("h1")).not.toBeNull());
     expect(document.title).toBe(BASE_TITLE);

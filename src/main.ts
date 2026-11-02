@@ -81,10 +81,17 @@ const bg = el("canvas", { class: "bg", attrs: { id: "bg", "aria-hidden": "true" 
 const topbar = el("header", { class: "topbar" });
 // The brand navigates to the catalogue, so it is a link, not a button: assistive
 // tech announces "link" and the destination is a plain URL (SHIG 11, 60).
-const brand = el("a", { class: "brand", attrs: { href: "#", "aria-label": "GLSL Atelier レッスン一覧へ" } });
+// The name starts with the text it shows, then the destination, so speech-input
+// users can say what they see (WCAG 2.5.3 Label in Name).
+const BRAND_NAME = "GLSL Atelier";
+const BRAND_TAGLINE = "手を動かして学ぶ WebGL / Three.js";
+const brand = el("a", {
+  class: "brand",
+  attrs: { href: "#", "aria-label": `${BRAND_NAME} ${BRAND_TAGLINE} レッスン一覧へ` },
+});
 brand.append(el("span", { class: "brand__glyph", attrs: { "aria-hidden": "true" } }));
-brand.append(el("span", { class: "brand__name", text: "GLSL Atelier" }));
-brand.append(el("small", { text: "手を動かして学ぶ WebGL / Three.js" }));
+brand.append(el("span", { class: "brand__name", text: BRAND_NAME }));
+brand.append(el("small", { text: BRAND_TAGLINE }));
 const crumb = el("div", { class: "crumb" });
 // On phones the crumb is hidden and the panel's back link scrolls away; keep a
 // way back in the sticky bar while a lesson is open (SHIG 60, 82). CSS shows it
